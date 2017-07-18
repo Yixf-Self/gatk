@@ -175,7 +175,7 @@ public final class GenomicsDBImport extends GATKTool {
     public boolean requiresIntervals() { return true; }
 
     @Override
-    public int getDefaultCloudPrefetchBufferSize() {
+    public int getCloudPrefetchBufferSize() {
         // Empirical testing has shown that this tool performs best at scale with cloud buffering
         // disabled. With cloud buffering on and thousands of concurrent GenomicsDBImport tasks,
         // we do too many simultaneous GCS accesses (since the prefetcher spawns a new thread for each
@@ -184,7 +184,7 @@ public final class GenomicsDBImport extends GATKTool {
     }
 
     @Override
-    public int getDefaultCloudIndexPrefetchBufferSize() {
+    public int getCloudIndexPrefetchBufferSize() {
         // Empirical testing has shown that this tool performs best at scale with cloud buffering
         // disabled. With cloud buffering on and thousands of concurrent GenomicsDBImport tasks,
         // we do too many simultaneous GCS accesses (since the prefetcher spawns a new thread for each
