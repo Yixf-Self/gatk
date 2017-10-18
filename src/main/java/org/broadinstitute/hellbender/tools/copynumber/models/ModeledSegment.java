@@ -1,4 +1,4 @@
-package org.broadinstitute.hellbender.tools.copynumber.multidimensional.model;
+package org.broadinstitute.hellbender.tools.copynumber.models;
 
 import htsjdk.samtools.util.Locatable;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
@@ -57,43 +57,43 @@ public class ModeledSegment implements Locatable {
         return numPointsAlleleFraction;
     }
 
-    public SimplePosteriorSummary getLog2CopyRatioSimplePosteriorSummary() {
+    SimplePosteriorSummary getLog2CopyRatioSimplePosteriorSummary() {
         return log2CopyRatioSimplePosteriorSummary;
     }
 
-    public SimplePosteriorSummary getMinorAlleleFractionSimplePosteriorSummary() {
+    SimplePosteriorSummary getMinorAlleleFractionSimplePosteriorSummary() {
         return minorAlleleFractionSimplePosteriorSummary;
     }
 
-    public static final class SimplePosteriorSummary {
+    static final class SimplePosteriorSummary {
         private final double decile10;
         private final double decile50;
         private final double decile90;
 
-        public SimplePosteriorSummary(final double decile10,
-                                      final double decile50,
-                                      final double decile90) {
+        SimplePosteriorSummary(final double decile10,
+                               final double decile50,
+                               final double decile90) {
             this.decile10 = decile10;
             this.decile50 = decile50;
             this.decile90 = decile90;
         }
 
-        public SimplePosteriorSummary(final List<Double> samples) {
+        SimplePosteriorSummary(final List<Double> samples) {
             final DecileCollection deciles = new DecileCollection(samples);
             this.decile10 = deciles.get(Decile.DECILE_10);
             this.decile50 = deciles.get(Decile.DECILE_50);
             this.decile90 = deciles.get(Decile.DECILE_90);
         }
 
-        public double getDecile10() {
+        double getDecile10() {
             return decile10;
         }
 
-        public double getDecile50() {
+        double getDecile50() {
             return decile50;
         }
 
-        public double getDecile90() {
+        double getDecile90() {
             return decile90;
         }
 
