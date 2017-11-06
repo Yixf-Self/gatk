@@ -22,7 +22,7 @@ The reference used must be the same between PoN and case samples.
 - ``CNVSomaticPanelWorkflow.ref_fasta_fai`` -- Path to reference fasta fai file.
 - ``CNVSomaticPanelWorkflow.ref_fasta_dict`` -- Path to reference dict file.
 - ``CNVSomaticPanelWorkflow.do_explicit_gc_correction`` -- (optional) If true, perform explicit GC-bias correction when creating PoN and in subsequent denoising of case samples.  If false, rely on PCA-based denoising to correct for GC bias.
-- ``CNVSomaticPanelWorkflow.gatk_jar`` -- Absolute path to gatk.jar.
+- ``CNVSomaticPanelWorkflow.gatk_jar_override`` -- (optional) Absolute path to an alternative jar, which will be used instead of the jar in the Docker image.
 - ``CNVSomaticPanelWorkflow.gatk_docker`` -- GATK Docker image (e.g., ``broadinstitute/gatk:x.beta.x``).
 
 In additional, there are several task-level parameters that may be set by advanced users; for example:
@@ -46,7 +46,7 @@ The reference (and bins, if specified) used must be the same between PoN and cas
 - ``CNVSomaticPairWorkflow.ref_fasta`` -- Path to reference fasta file.
 - ``CNVSomaticPairWorkflow.ref_fasta_fai`` -- Path to reference fasta fai file.
 - ``CNVSomaticPairWorkflow.ref_fasta_dict`` -- Path to reference dict file.
-- ``CNVSomaticPairWorkflow.gatk_jar`` -- Absolute path to gatk.jar.
+- ``CNVSomaticPairWorkflow.gatk_jar_override`` -- (optional) Absolute path to an alternative jar, which will be used instead of the jar in the Docker image.
 - ``CNVSomaticPairWorkflow.gatk_docker`` -- GATK Docker image (e.g., "broadinstitute/gatk:x.beta.x").
 
 In additional, there are several task-level parameters that may be set by advanced users as above.

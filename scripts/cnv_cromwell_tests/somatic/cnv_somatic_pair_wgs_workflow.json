@@ -9,7 +9,6 @@
   "CNVSomaticPairWorkflow.ref_fasta": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_somatic_workflows_test_files/human_g1k_v37.chr-20.truncated.fasta",
   "CNVSomaticPairWorkflow.ref_fasta_fai": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_somatic_workflows_test_files/human_g1k_v37.chr-20.truncated.fasta.fai",
   "CNVSomaticPairWorkflow.ref_fasta_dict": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_somatic_workflows_test_files/human_g1k_v37.chr-20.truncated.dict",
-  "CNVSomaticPairWorkflow.gatk_jar": "/root/gatk.jar",
   "CNVSomaticPairWorkflow.gatk_docker": "__GATK_DOCKER__",
   "CNVSomaticPairWorkflow.PreprocessIntervals.bin_length": "10000"
 }
