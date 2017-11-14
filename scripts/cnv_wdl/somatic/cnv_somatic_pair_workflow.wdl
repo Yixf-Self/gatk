@@ -125,7 +125,6 @@ workflow CNVSomaticPairWorkflow {
     call CallCopyRatioSegments as CallCopyRatioSegmentsTumor {
         input:
             entity_id = CollectCountsTumor.entity_id,
-            denoised_copy_ratios = DenoiseReadCountsTumor.denoised_copy_ratios,
             copy_ratio_segments = ModelSegmentsTumor.copy_ratio_only_segments,
             gatk_jar = gatk_jar,
             gatk_docker = gatk_docker
@@ -134,7 +133,6 @@ workflow CNVSomaticPairWorkflow {
     call CallCopyRatioSegments as CallCopyRatioSegmentsNormal {
         input:
             entity_id = CollectCountsNormal.entity_id,
-            denoised_copy_ratios = DenoiseReadCountsNormal.denoised_copy_ratios,
             copy_ratio_segments = ModelSegmentsNormal.copy_ratio_only_segments,
             gatk_jar = gatk_jar,
             gatk_docker = gatk_docker
@@ -305,8 +303,10 @@ task ModelSegments {
 
 task CallCopyRatioSegments {
     String entity_id
-    File denoised_copy_ratios
     File copy_ratio_segments
+    Float? neutral_segment_copy_ratio_threshold
+    Float? outlier_neutral_segment_copy_ratio_z_score_threshold
+    Float? calling_copy_ratio_z_score_threshold
     String gatk_jar
 
     # Runtime parameters
@@ -317,8 +317,10 @@ task CallCopyRatioSegments {
 
     command {
         java -Xmx${default="4" mem}g -jar ${gatk_jar} CallCopyRatioSegments \
-            --denoisedCopyRatios ${denoised_copy_ratios} \
-            --segments ${copy_ratio_segments} \
+            --input ${copy_ratio_segments} \
+            --neutralSegmentCopyRatioThreshold ${default="0.1" neutral_segment_copy_ratio_threshold} \
+            --outlierNeutralSegmentCopyRatioZScoreThreshold ${default="2.0" outlier_neutral_segment_copy_ratio_z_score_threshold} \
+            --callingCopyRatioZScoreThreshold ${default="2.0" calling_copy_ratio_z_score_threshold} \
             --output ${entity_id}.called.seg
     }
 
