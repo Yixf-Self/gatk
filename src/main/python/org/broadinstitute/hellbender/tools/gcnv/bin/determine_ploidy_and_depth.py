@@ -1,8 +1,7 @@
 import os
 
 # set theano flags
-os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float64,optimizer=fast_run,compute_test_value=ignore," \
-                             "openmp=true,allow_gc=True"
+os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float64,optimizer=fast_run,compute_test_value=ignore"
 
 import logging
 import argparse
@@ -70,11 +69,11 @@ group.add_argument("--sample_coverage_metadata",
                    default=argparse.SUPPRESS,
                    help="Coverage metadata of all samples (in .tsv format)")
 
-group.add_argument("--sample_names_table",
-                   type=str,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="List of sample names to include in ploidy determination task (in .tsv format)")
+# group.add_argument("--sample_names_table",
+#                    type=str,
+#                    required=True,
+#                    default=argparse.SUPPRESS,
+#                    help="List of sample names to include in ploidy determination task (in .tsv format)")
 
 group.add_argument("--contig_ploidy_prior_table",
                    type=str,
@@ -142,12 +141,12 @@ if __name__ == "__main__":
     # load targets interval list
     targets_interval_list = gcnvkernel.io.load_targets_tsv_file(args.targets_interval_list)
 
+    # # load sample names
+    # sample_names = gcnvkernel.SampleMetadataCollection.read_sample_names(args.sample_names_table)
+
     # load sample coverage metadata
     sample_metadata_collection = gcnvkernel.SampleMetadataCollection()
-    sample_metadata_collection.read_sample_coverage_metadata(args.sample_coverage_metadata)
-
-    # load sample names
-    sample_names = gcnvkernel.SampleMetadataCollection.read_sample_names(args.sample_names_table)
+    sample_names = sample_metadata_collection.read_sample_coverage_metadata(args.sample_coverage_metadata)
 
     # generate targets metadata
     targets_metadata = gcnvkernel.TargetsIntervalListMetadata(targets_interval_list)

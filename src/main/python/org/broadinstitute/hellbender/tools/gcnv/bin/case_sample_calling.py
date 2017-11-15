@@ -1,8 +1,7 @@
 import os
 
 # set theano flags
-os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float64,optimizer=fast_run,compute_test_value=ignore," \
-                             "openmp=true,allow_gc=True"
+os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float64,optimizer=fast_run,compute_test_value=ignore"
 
 import logging
 import argparse

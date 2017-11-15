@@ -257,7 +257,8 @@ class SampleMetadataCollection:
                        + [repr(sample_ploidy_metadata.ploidy_genotyping_quality_j[j]) for j in range(len(contig_list))])
                 writer.writerow(row)
 
-    def read_sample_coverage_metadata(self, input_file: str):
+    def read_sample_coverage_metadata(self, input_file: str) -> List[str]:
+        sample_names = []
         with open(input_file, 'r') as tsv_file:
             reader = csv.reader(tsv_file, delimiter='\t')
             row_num = 0
@@ -280,6 +281,8 @@ class SampleMetadataCollection:
                     sample_name = row[0]
                     n_j = np.asarray([int(row[k + 2]) for k in range(num_contigs)], dtype=types.big_uint)
                     self.add_sample_coverage_metadata(SampleCoverageMetadata(sample_name, n_j, contig_list))
+                    sample_names.append(sample_name)
+        return sample_names
 
     def read_sample_read_depth_metadata(self, input_file: str):
         with open(input_file, 'r') as tsv_file:

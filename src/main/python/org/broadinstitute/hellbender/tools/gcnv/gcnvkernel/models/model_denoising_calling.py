@@ -33,8 +33,8 @@ class DenoisingModelConfig:
     def __init__(self,
                  max_bias_factors: int = 5,
                  mapping_error_rate: float = 0.01,
-                 psi_scale: float = 0.001,
-                 gamma_scale: float = 0.0001,
+                 psi_t_scale: float = 0.001,
+                 psi_s_scale: float = 0.0001,
                  depth_correction_tau: float = 10000.0,
                  log_mean_bias_std: float = 0.1,
                  init_ard_rel_unexplained_variance: float = 0.1,
@@ -47,8 +47,8 @@ class DenoisingModelConfig:
         """ Constructor
         :param max_bias_factors: maximum number of bias factors
         :param mapping_error_rate: typical mapping error rate
-        :param psi_scale: scale of target-specific unexplained variance
-        :param gamma_scale: scale of sample-specific unexplained variance
+        :param psi_t_scale: scale of target-specific unexplained variance
+        :param psi_s_scale: scale of sample-specific unexplained variance
         :param depth_correction_tau: precision for pinning the read depth for each denoising task to its global value
         :param log_mean_bias_std: standard deviation of the log mean bias
         :param init_ard_rel_unexplained_variance: initial ARD precision relative to unexplained variance
@@ -63,8 +63,8 @@ class DenoisingModelConfig:
 
         self.max_bias_factors = max_bias_factors
         self.mapping_error_rate = mapping_error_rate
-        self.psi_scale = psi_scale
-        self.gamma_scale = gamma_scale
+        self.psi_t_scale = psi_t_scale
+        self.psi_s_scale = psi_s_scale
         self.depth_correction_tau = depth_correction_tau
         self.log_mean_bias_std = log_mean_bias_std
         self.init_ard_rel_unexplained_variance = init_ard_rel_unexplained_variance
@@ -98,11 +98,11 @@ class DenoisingModelConfig:
                               type=float,
                               help="Typical mapping error rate")
 
-        process_and_maybe_add("psi_scale",
+        process_and_maybe_add("psi_t_scale",
                               type=float,
                               help="Typical scale of target-specific unexplained variance")
 
-        process_and_maybe_add("gamma_scale",
+        process_and_maybe_add("psi_s_scale",
                               type=float,
                               help="Typical scale of sample-specific unexplained variance")
 
@@ -466,7 +466,7 @@ class DefaultInitialModelParametersSupplier(InitialModelParametersSupplier):
         super().__init__(denoising_model_config, calling_config, shared_workspace)
 
     def get_init_psi_t(self) -> np.ndarray:
-        return self.denoising_model_config.psi_scale * np.ones(
+        return self.denoising_model_config.psi_t_scale * np.ones(
             (self.shared_workspace.num_targets,), dtype=types.floatX)
 
     # todo better initialization?
@@ -474,7 +474,7 @@ class DefaultInitialModelParametersSupplier(InitialModelParametersSupplier):
         return np.zeros((self.shared_workspace.num_targets,), dtype=types.floatX)
 
     def get_init_ard_u(self) -> np.ndarray:
-        fact = self.denoising_model_config.psi_scale * self.denoising_model_config.init_ard_rel_unexplained_variance
+        fact = self.denoising_model_config.psi_t_scale * self.denoising_model_config.init_ard_rel_unexplained_variance
         return fact * np.ones((self.denoising_model_config.max_bias_factors,), dtype=types.floatX)
 
 
@@ -492,36 +492,19 @@ class DenoisingModel(GeneralizedContinuousModel):
         eps = denoising_model_config.mapping_error_rate
 
         # target-specific unexplained variance
-        psi_upper = Exponential(name='psi_upper', lam=1.0 / denoising_model_config.psi_scale)
-        register_as_global(psi_upper)
-
-        # unscaled_psi_t = Uniform(name='unscaled_psi_t', lower=0, upper=1,
-        #                          shape=(shared_workspace.num_targets,),
-        #                          broadcastable=(False,))
-        # register_as_global(unscaled_psi_t)
-        # psi_t = Deterministic(name='psi_t', var=psi_upper * unscaled_psi_t)
-
-        psi_t = Exponential(name='psi_t', lam=1.0 / denoising_model_config.psi_scale,
-                            shape=shared_workspace.num_targets)
+        psi_t = Exponential(name='psi_t', lam=1.0 / denoising_model_config.psi_t_scale,
+                            shape=(shared_workspace.num_targets,),
+                            broadcastable=(False,))
         register_as_global(psi_t)
 
-        gamma_s = Exponential(name='gamma_s', lam=1.0 / denoising_model_config.gamma_scale,
-                              shape=self.shared_workspace.num_samples,
-                              broadcastable=(False,))
-        register_as_sample_specific(gamma_s)
-
-        # todo better priors? the uniform scaling trick, while works, is not quite satisfying
-        # psi_t = dists.PositiveFlatTop(name='psi_t', u=psi_upper, k=4,
-        #                               shape=shared_workspace.num_targets,
-        #                               testval=test_value_supplier.get_init_psi_t())
-        # psi_t = Uniform(name='psi_t', lower=0, upper=0.002, shape=shared_workspace.num_targets)
-
-        # psi_t = Exponential(name='psi_t', lam=1.0 / denoising_model_config.psi_scale,
-        #                        shape=shared_workspace.num_targets)
-        # register_as_global(psi_t)
+        # sample-specific unexplained variance
+        psi_s = Exponential(name='psi_s', lam=1.0 / denoising_model_config.psi_s_scale,
+                            shape=(shared_workspace.num_samples,),
+                            broadcastable=(False,))
+        register_as_sample_specific(psi_s)
 
         # convert "unexplained variance" to negative binomial over-dispersion
-        alpha_st = tt.inv((tt.exp(psi_t.dimshuffle('x', 0) + gamma_s.dimshuffle(0, 'x')) - 1.0))
+        alpha_st = tt.inv((tt.exp(psi_t.dimshuffle('x', 0) + psi_s.dimshuffle(0, 'x')) - 1.0))
 
         # target-specific mean log bias
         log_mean_bias_t = Normal(name='log_mean_bias_t', mu=0.0, sd=denoising_model_config.log_mean_bias_std,
@@ -627,7 +610,7 @@ class DenoisingModel(GeneralizedContinuousModel):
                                * shared_workspace.copy_number_values_c.dimshuffle('x', 'x', 0)
                                + mean_mapping_error_correction_s.dimshuffle(0, 'x', 'x'))
                 alpha_flat_stc = tt.inv((tt.exp(psi_t.dimshuffle('x', 0)[:, flat_class_indices]
-                                                + gamma_s.dimshuffle(0, 'x')) - 1.0)).dimshuffle(0, 1, 'x')
+                                                + psi_s.dimshuffle(0, 'x')) - 1.0)).dimshuffle(0, 1, 'x')
                 n_flat_stc = _n_st.dimshuffle(0, 1, 'x')[:, flat_class_indices, :]
                 flat_class_logp_stc = commons.negative_binomial_logp(mu_flat_stc, alpha_flat_stc, n_flat_stc)
                 log_q_c_flat_stc = shared_workspace.log_q_c_stc[:, flat_class_indices, :]
