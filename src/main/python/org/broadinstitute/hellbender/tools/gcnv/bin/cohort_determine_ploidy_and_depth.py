@@ -57,7 +57,7 @@ log_level_map = {
 # add tool-specific args
 group = parser.add_argument_group(title="Required arguments")
 
-group.add_argument("--targets_interval_list",
+group.add_argument("--interval_list",
                    type=str,
                    required=True,
                    default=argparse.SUPPRESS,
@@ -87,6 +87,12 @@ group.add_argument("--output_read_depth",
                    default=argparse.SUPPRESS,
                    help="Output path to write sample read depth table")
 
+group.add_argument("--output_ploidy_model_path",
+                   type=str,
+                   required=True,
+                   default=argparse.SUPPRESS,
+                   help="Output path to write the ploidy model for future single-sample ploidy determination use")
+
 # optional arguments
 gcnvkernel.PloidyModelConfig.expose_args(parser)
 
@@ -94,9 +100,11 @@ gcnvkernel.PloidyModelConfig.expose_args(parser)
 gcnvkernel.HybridInferenceParameters.expose_args(
     parser,
     override_default={
+        "--learning_rate": 0.1,
+        "--adamax_beta2": 0.999,
         "--log_emission_samples_per_round": 1000,
         "--log_emission_sampling_rounds": 50,
-        "--log_emission_sampling_median_rel_error": 5e-3,
+        "--log_emission_sampling_median_rel_error": 1e-3,
         "--max_advi_iter_first_epoch": 1000,
         "--max_advi_iter_subsequent_epochs": 1000,
         "--convergence_snr_averaging_window": 5000,
@@ -133,14 +141,14 @@ if __name__ == "__main__":
         args.contig_ploidy_prior_table)
 
     # load targets interval list
-    targets_interval_list = gcnvkernel.io.load_targets_tsv_file(args.targets_interval_list)
+    interval_list = gcnvkernel.io.load_interval_list_tsv_file(args.interval_list)
 
     # load sample coverage metadata
     sample_metadata_collection = gcnvkernel.SampleMetadataCollection()
     sample_names = sample_metadata_collection.read_sample_coverage_metadata(args.sample_coverage_metadata)
 
     # generate targets metadata
-    targets_metadata = gcnvkernel.TargetsIntervalListMetadata(targets_interval_list)
+    intervals_metadata = gcnvkernel.TargetsIntervalListMetadata(interval_list)
 
     # inject ploidy prior map to the dictionary of parsed args
     args_dict = args.__dict__
@@ -148,7 +156,7 @@ if __name__ == "__main__":
 
     ploidy_config = gcnvkernel.PloidyModelConfig.from_args_dict(args_dict)
     ploidy_inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)
-    ploidy_workspace = gcnvkernel.PloidyWorkspace(ploidy_config, targets_metadata, sample_names,
+    ploidy_workspace = gcnvkernel.PloidyWorkspace(ploidy_config, intervals_metadata, sample_names,
                                                   sample_metadata_collection)
     ploidy_task = gcnvkernel.PloidyInferenceTask(ploidy_inference_params, ploidy_config, ploidy_workspace)
 
@@ -159,3 +167,8 @@ if __name__ == "__main__":
     # save results
     sample_metadata_collection.write_sample_read_depth_metadata(sample_names, args.output_read_depth)
     sample_metadata_collection.write_sample_contig_ploidy_metadata(sample_names, args.output_contig_ploidy)
+
+    # save model parameters
+    gcnvkernel.io.PloidyModelExporter(ploidy_config, ploidy_workspace,
+                                      ploidy_task.continuous_model, ploidy_task.continuous_model_approx,
+                                      args.output_ploidy_model_path)()

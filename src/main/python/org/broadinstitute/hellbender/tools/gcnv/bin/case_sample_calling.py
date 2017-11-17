@@ -152,7 +152,7 @@ if __name__ == "__main__":
 
     # load targets interval list if provided
     if 'targets_interval_list' in args:
-        loaded_targets_interval_list = gcnvkernel.io.load_targets_tsv_file(args.targets_interval_list)
+        loaded_targets_interval_list = gcnvkernel.io.load_interval_list_tsv_file(args.targets_interval_list)
     else:
         loaded_targets_interval_list = None
 

@@ -1,7 +1,7 @@
 import logging
 import argparse
 import inspect
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -44,7 +44,7 @@ class PloidyModelConfig:
 
     @staticmethod
     def _get_validated_contig_ploidy_prior_map(given_contig_ploidy_prior_map: Dict[str, np.ndarray],
-                                               min_prob: float = 0):
+                                               min_prob: float = 0) -> Tuple[Dict[str, np.ndarray], int]:
         given_contigs = set(given_contig_ploidy_prior_map.keys())
         num_ploidy_states: int = 0
         for contig in given_contigs:

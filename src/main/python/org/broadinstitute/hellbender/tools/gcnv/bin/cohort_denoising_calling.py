@@ -57,17 +57,18 @@ log_level_map = {
 # add tool-specific args
 group = parser.add_argument_group(title="Required arguments")
 
-group.add_argument("--targets_interval_list",
-                   type=str,
-                   required=False,
-                   default=argparse.SUPPRESS,
-                   help="Full interval list, possibly including extra annotations (in .tsv format)")
-
-group.add_argument("--sample_read_counts_table",
+group.add_argument("--modeling_interval_list",
                    type=str,
                    required=True,
                    default=argparse.SUPPRESS,
-                   help="Sample name and read counts table (in .tsv format)")
+                   help="Full interval list, possibly including extra annotations (in .tsv format)")
+
+group.add_argument("--read_count_tsv_files",
+                   type=str,
+                   required=True,
+                   nargs='+',  # one or more
+                   default=argparse.SUPPRESS,
+                   help="List of read count files in the cohort (in .tsv format; must include sample name header)")
 
 group.add_argument("--sample_ploidy_metadata_table",
                    type=str,
@@ -80,18 +81,6 @@ group.add_argument("--sample_read_depth_metadata_table",
                    required=True,
                    default=argparse.SUPPRESS,
                    help="Read depth metadata of all samples (in .tsv format)")
-
-group.add_argument("--first_target_index",
-                   type=int,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="First target index to include in the analysis (inclusive)")
-
-group.add_argument("--last_target_index",
-                   type=int,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="Last target index to include in the analysis (exclusive)")
 
 group.add_argument("--output_model_path",
                    type=str,
@@ -138,20 +127,13 @@ if __name__ == "__main__":
     console.setFormatter(formatter)
     logging.getLogger('').addHandler(console)
 
-    # load targets interval list if provided
-    if 'targets_interval_list' in args:
-        loaded_targets_interval_list = gcnvkernel.io.load_targets_tsv_file(args.targets_interval_list)
-    else:
-        loaded_targets_interval_list = None
+    # load modeling interval list
+    modeling_interval_list = gcnvkernel.io.load_interval_list_tsv_file(args.modeling_interval_list)
 
     # load sample names, truncated counts, and interval list from the sample read counts table
-    sample_names, n_st, targets_interval_list = gcnvkernel.io.load_truncated_counts(
-        args.sample_read_counts_table, args.first_target_index, args.last_target_index,
-        assert_targets_are_equal=False)
-
-    # if an external interval list is provided, copy annotations to targets_interval_list
-    if loaded_targets_interval_list is not None:
-        gcnvkernel.inherit_interval_annotations(loaded_targets_interval_list, targets_interval_list)
+    logging.info("Loading {0} read counts file(s)...".format(len(args.read_count_tsv_files)))
+    sample_names, n_st = gcnvkernel.io.load_counts_in_the_modeling_zone(
+        args.read_count_tsv_files, modeling_interval_list)
 
     # load read depth and ploidy metadata
     sample_metadata_collection = gcnvkernel.SampleMetadataCollection()
@@ -159,7 +141,7 @@ if __name__ == "__main__":
     sample_metadata_collection.read_sample_ploidy_metadata(args.sample_ploidy_metadata_table)
 
     # setup sample contig ploidy array
-    contigs_set = {target.contig for target in targets_interval_list}
+    contigs_set = {target.contig for target in modeling_interval_list}
     baseline_copy_number_s = None
     for contig in contigs_set:
         if baseline_copy_number_s is None:
@@ -184,7 +166,7 @@ if __name__ == "__main__":
     inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)
 
     shared_workspace = gcnvkernel.DenoisingCallingWorkspace(
-        denoising_config, calling_config, targets_interval_list,
+        denoising_config, calling_config, modeling_interval_list,
         n_st, baseline_copy_number_s, read_depth_s)
 
     initial_params_supplier = gcnvkernel.DefaultDenoisingModelInitializer(
@@ -205,6 +187,6 @@ if __name__ == "__main__":
         args.output_model_path)()
 
     # save calls
-    gcnvkernel.io.SamplePosteriorsExporter(
+    gcnvkernel.io.SampleDenoisingAndCallingPosteriorsExporter(
         shared_workspace, task.continuous_model, task.continuous_model_approx, sample_names,
         args.output_calls_path)()

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple, Set
+from typing import List, Optional, Tuple, Set, Dict
 from ast import literal_eval as make_tuple
 
 import numpy as np
@@ -7,73 +7,104 @@ import pandas as pd
 import pymc3 as pm
 import os
 import json
-from .._version import __version__ as gcnv_kernel_version
+import re
+from .._version import __version__ as gcnvkernel_version
 from .. import config
 
 from ..structs.interval import Interval, IntervalAnnotation, interval_annotations_dict, interval_annotations_dtypes
 from ..models.model_denoising_calling import DenoisingCallingWorkspace, DenoisingModel
 from ..models.model_denoising_calling import CopyNumberCallingConfig, DenoisingModelConfig
+from ..models.model_ploidy import PloidyWorkspace, PloidyModel
+from ..models.model_ploidy import PloidyModelConfig
+
 from .. import types
 from collections import namedtuple
 
 _logger = logging.getLogger(__name__)
 
 # standard read counts and target interval list files data types
-interval_dtypes_dict = {'CONTIG': np.str, 'START': types.med_uint, 'END': types.med_uint}
-read_count_dtypes_dict = {**interval_dtypes_dict, 'COUNT': types.med_uint}
+_contig_column_header = 'CONTIG'
+_start_column_header = 'START'
+_end_column_header = 'END'
+_count_column_header = 'COUNT'
+_sample_name_header_regexp = "^[# ]+SAMPLE_NAME[\\s\t]*=[\\s\t]*(.*\\S)[\\s\t]*$"
+
+interval_dtypes_dict = {
+    _contig_column_header: np.str,
+    _start_column_header: types.med_uint,
+    _end_column_header: types.med_uint
+}
+
+read_count_dtypes_dict = {
+    **interval_dtypes_dict,
+    _count_column_header: types.med_uint
+}
+
+
+def extract_sample_name_from_read_counts_tsv_file(read_counts_tsv_file: str,
+                                                  max_scan_lines: int = 100) -> str:
+    with open(read_counts_tsv_file, 'r') as f:
+        for _ in range(max_scan_lines):
+            line = f.readline()
+            match = re.search(_sample_name_header_regexp, line, re.M)
+            if match is None:
+                continue
+            groups = match.groups()
+            return groups[0]
+    raise Exception("Sample name could not be found in the read counts .tsv file ({0})".format(read_counts_tsv_file))
 
 
 def load_read_counts_tsv_file(read_counts_tsv_file: str,
                               max_rows: Optional[int] = None,
                               output_targets: bool = False)\
-        -> Tuple[np.ndarray, Optional[List[Interval]]]:
-    counts_pd = pd.read_csv(read_counts_tsv_file, delimiter='\t', nrows=max_rows,
+        -> Tuple[str, np.ndarray, Optional[List[Interval]]]:
+    sample_name = extract_sample_name_from_read_counts_tsv_file(read_counts_tsv_file)
+    counts_pd = pd.read_csv(read_counts_tsv_file, delimiter='\t', comment='#', nrows=max_rows,
                             dtype={**read_count_dtypes_dict})
     if output_targets:
         targets_pd = counts_pd[list(interval_dtypes_dict.keys())]
         targets_interval_list = _convert_targets_pd_to_interval_list(targets_pd)
-        return counts_pd['COUNT'].as_matrix(), targets_interval_list
+        return sample_name, counts_pd[_count_column_header].as_matrix(), targets_interval_list
     else:
-        return counts_pd['COUNT'], None
+        return sample_name, counts_pd[_count_column_header].as_matrix(), None
 
 
-def load_targets_tsv_file(targets_tsv_file: str) -> List[Interval]:
+def load_interval_list_tsv_file(targets_tsv_file: str) -> List[Interval]:
     targets_pd = pd.read_csv(targets_tsv_file, delimiter='\t',
                              dtype={**interval_dtypes_dict, **interval_annotations_dtypes})
     return _convert_targets_pd_to_interval_list(targets_pd)
 
 
-def load_truncated_counts(sample_counts_table_tsv_file: str,
-                          first_target_index: int,
-                          last_target_index: int,
-                          assert_targets_are_equal: bool = False) -> Tuple[List[str], np.ndarray, List[Interval]]:
-    assert first_target_index >= 0
-    assert last_target_index > first_target_index
+def get_counts_for_interval_list(n_t: np.ndarray,
+                                 interval_to_index_map: Dict[Interval, int],
+                                 modeling_interval_list: List[Interval]):
+    return np.asarray([n_t[interval_to_index_map[interval]]
+                       for interval in modeling_interval_list], dtype=types.med_uint)
 
-    sample_counts_table_pd = pd.read_csv(sample_counts_table_tsv_file, delimiter='\t',
-                                         dtype={'SAMPLE_NAME': str, 'PATH': str})
-    columns = [str(x) for x in sample_counts_table_pd.columns.values]
-    assert 'SAMPLE_NAME' in columns
-    assert 'PATH' in columns
 
-    sample_names = [x for x in sample_counts_table_pd['SAMPLE_NAME']]
-    paths = [x for x in sample_counts_table_pd['PATH']]
+def load_counts_in_the_modeling_zone(read_count_file_list: List[str],
+                                     modeling_interval_list: List[Interval]):
+    """ Note: it is assumed that all read counts have the same intervals; this is not asserted for speed """
+    num_targets = len(modeling_interval_list)
+    num_samples = len(read_count_file_list)
+    assert num_samples > 0
+    assert num_targets > 0
 
-    num_samples = len(sample_names)
-    num_targets = last_target_index - first_target_index
+    sample_names: List[str] = []
     n_st = np.zeros((num_samples, num_targets), dtype=types.med_uint)
-
-    targets_interval_list = None
-    for si, sample_coverage_path in enumerate(paths):
-        sample_coverage_t, sample_targets_interval_list = load_read_counts_tsv_file(
-            sample_coverage_path, output_targets=targets_interval_list is None or assert_targets_are_equal)
-        if assert_targets_are_equal and targets_interval_list is not None:
-            assert targets_interval_list == sample_targets_interval_list[first_target_index:last_target_index]
-        if targets_interval_list is None:
-            targets_interval_list = sample_targets_interval_list[first_target_index:last_target_index]
-        n_st[si, :] = sample_coverage_t[first_target_index:last_target_index]
-
-    return sample_names, n_st, targets_interval_list
+    master_interval_list = None
+    interval_to_index_map = None
+    for si, read_count_file in enumerate(read_count_file_list):
+        if master_interval_list is None:
+            sample_name, n_t, master_interval_list = load_read_counts_tsv_file(read_count_file, output_targets=True)
+            interval_to_index_map = {interval: ti for ti, interval in enumerate(master_interval_list)}
+            assert all([interval in interval_to_index_map for interval in modeling_interval_list]),\
+                "Some of the modeling intervals are absent in the provided read counts .tsv file"
+        else:  # do not load targets for speed, assume it is the same as the first sample
+            sample_name, n_t, _ = load_read_counts_tsv_file(read_count_file, output_targets=False)
+        sample_names.append(sample_name)
+        n_st[si, :] = get_counts_for_interval_list(n_t, interval_to_index_map, modeling_interval_list)
+    return sample_names, n_st
 
 
 def _convert_targets_pd_to_interval_list(targets_pd: pd.DataFrame) -> List[Interval]:
@@ -85,7 +116,9 @@ def _convert_targets_pd_to_interval_list(targets_pd: pd.DataFrame) -> List[Inter
     columns = [str(x) for x in targets_pd.columns.values]
     assert all([required_column in columns
                 for required_column in interval_dtypes_dict.keys()]), "Some columns missing"
-    for contig, start, end in zip(targets_pd['CONTIG'], targets_pd['START'], targets_pd['END']):
+    for contig, start, end in zip(targets_pd[_contig_column_header],
+                                  targets_pd[_start_column_header],
+                                  targets_pd[_end_column_header]):
         interval = Interval(contig, start, end)
         interval_list.append(interval)
 
@@ -189,7 +222,7 @@ def read_ndarray_from_tsv(input_file: str, comment='#', delimiter='\t') -> np.nd
 
 def write_interval_list_to_tsv_file(output_file: str, interval_list: List[Interval]):
     assert len(interval_list) > 0, "can not write an empty interval list to disk"
-    annotation_found_keys: Set[str] = {}
+    annotation_found_keys: Set[str] = set()
     for interval in interval_list:
         for key in interval.annotations.keys():
             annotation_found_keys.add(key)
@@ -201,11 +234,12 @@ def write_interval_list_to_tsv_file(output_file: str, interval_list: List[Interv
             _logger.warning("Only some targets have annotation ({0}) and others do not; "
                             "cannot write this annotation to disk; proceeding...")
     with open(output_file, 'w') as out:
-        header = '\t'.join(['CONTIG', 'START', 'END'] + mutual_annotation_key_list)
+        header = '\t'.join([_contig_column_header, _start_column_header, _end_column_header]
+                           + mutual_annotation_key_list)
         out.write(header + '\n')
         for interval in interval_list:
             row = '\t'.join([interval.contig, repr(interval.start), repr(interval.end)] +
-                            [repr(interval.annotations[key]) for key in mutual_annotation_key_list])
+                            [str(interval.annotations[key]) for key in mutual_annotation_key_list])
             out.write(row + '\n')
 
 
@@ -229,6 +263,12 @@ def _extract_meanfield_posterior_parameters(approx: pm.MeanField):
         mu_map[vmap.var] = mu_flat_view[vmap.slc].reshape(vmap.shp).astype(vmap.dtyp)
         std_map[vmap.var] = std_flat_view[vmap.slc].reshape(vmap.shp).astype(vmap.dtyp)
     return var_set, mu_map, std_map
+
+
+def _export_dict_to_json_file(output_file, raw_dict, blacklisted_keys):
+    filtered_dict = {k: v for k, v in raw_dict.items() if k not in blacklisted_keys}
+    with open(output_file, 'w') as fp:
+        json.dump(filtered_dict, fp, indent=1)
 
 
 class DenoisingModelExporter:
@@ -262,15 +302,15 @@ class DenoisingModelExporter:
 
     def __call__(self):
         # export gcnvkernel version
-        self._export_dict_to_json_file(
-            os.path.join(self.output_path, "gcnv_kernel_version.json"), {'version': gcnv_kernel_version}, {})
+        _export_dict_to_json_file(
+            os.path.join(self.output_path, "gcnvkernel_version.json"), {'version': gcnvkernel_version}, {})
 
         # export denoising config
-        self._export_dict_to_json_file(
+        _export_dict_to_json_file(
             os.path.join(self.output_path, "denoising_config.json"), self.denoising_config.__dict__, {})
 
         # export calling config
-        self._export_dict_to_json_file(
+        _export_dict_to_json_file(
             os.path.join(self.output_path, "calling_config.json"), self.calling_config.__dict__, {})
 
         # export interval list
@@ -312,13 +352,13 @@ class DenoisingModelImporter:
 
     def __call__(self):
         # import kernel version
-        with open(os.path.join(self.input_path, "gcnv_kernel_version.json"), 'r') as fp:
-            imported_gcnv_kernel_version = json.load(fp)['version']
+        with open(os.path.join(self.input_path, "gcnvkernel_version.json"), 'r') as fp:
+            imported_gcnvkernel_version = json.load(fp)['version']
 
-        if imported_gcnv_kernel_version != gcnv_kernel_version:
+        if imported_gcnvkernel_version != gcnvkernel_version:
             _logger.warning("The exported model is created with a different gcnvkernel version {exported: (0}, "
                             "current: {1}); backwards compatibility is not guaranteed; proceed at your own "
-                            "risk!").format(imported_gcnv_kernel_version, gcnv_kernel_version)
+                            "risk!").format(imported_gcnvkernel_version, gcnvkernel_version)
 
         # import denoising config
         with open(os.path.join(self.input_path, "denoising_config.json"), 'r') as fp:
@@ -331,7 +371,7 @@ class DenoisingModelImporter:
             # todo do we want to override?
 
         # import interval list
-        imported_interval_list = load_targets_tsv_file(os.path.join(self.input_path, "interval_list.tsv"))
+        imported_interval_list = load_interval_list_tsv_file(os.path.join(self.input_path, "interval_list.tsv"))
         assert imported_interval_list == self.denoising_calling_workspace.targets_interval_list,\
             "The interval list in the exported model is different from the one in the workspace; cannot continue"
         # Note: unless the exported model has been hampered with, we can be sure that number of targets
@@ -377,7 +417,10 @@ class DenoisingModelImporter:
                         model_rho.get_value(borrow=True), vmap.slc, vmap.dtyp, var_rho), borrow=True)
 
 
-class SamplePosteriorsExporter:
+class SampleDenoisingAndCallingPosteriorsExporter:
+    _sample_folder_prefix = "SAMPLE_"
+    _copy_number_column_prefix = "COPY_NUMBER_"
+
     """ Performs writing and reading of calls """
     def __init__(self,
                  denoising_calling_workspace: DenoisingCallingWorkspace,
@@ -405,12 +448,33 @@ class SamplePosteriorsExporter:
     ]
 
     @staticmethod
-    def _export_sample_copy_number_log_posterior(sample_posterior_path, log_q_c_tc):
-        write_ndarray_to_tsv(os.path.join(sample_posterior_path, 'log_q_c_tc.tsv'), log_q_c_tc)
+    def _export_sample_copy_number_log_posterior(sample_posterior_path: str,
+                                                 interval_list: List[Interval],
+                                                 log_q_c_tc: np.ndarray,
+                                                 delimiter='\t'):
+        assert isinstance(log_q_c_tc, np.ndarray)
+        assert log_q_c_tc.ndim == 2
+        assert log_q_c_tc.shape[0] == len(interval_list)
+        num_copy_number_states = log_q_c_tc.shape[1]
+        copy_number_header_columns = [SampleDenoisingAndCallingPosteriorsExporter._copy_number_column_prefix + str(cn)
+                                      for cn in range(num_copy_number_states)]
+        full_header = [_contig_column_header, _start_column_header, _end_column_header] + copy_number_header_columns
+        with open(os.path.join(sample_posterior_path, "log_q_c_tc.tsv"), 'w') as f:
+            f.writelines([delimiter.join(full_header)])
+            for ti, interval in enumerate(interval_list):
+                interval_repr = [interval.contig, repr(interval.start), repr(interval.end)]
+                q_c_row_repr = [repr(x) for x in log_q_c_tc[ti, :]]
+                f.writelines([delimiter.join(interval_repr + q_c_row_repr)])
+
+    @staticmethod
+    def _export_sample_name(sample_posterior_path: str,
+                            sample_name: str):
+        with open(os.path.join(sample_posterior_path, "sample_name.txt"), 'w') as f:
+            f.write(sample_name + '\n')
 
     def __call__(self):
         for si, sample_name in enumerate(self.sample_names):
-            sample_posterior_path = os.path.join(self.output_path, sample_name)
+            sample_posterior_path = os.path.join(self.output_path, self._sample_folder_prefix + repr(si))
             assert_output_path_writable(sample_posterior_path, try_creating_output_path=True)
 
             for var_name in self._approx_var_set:
@@ -427,6 +491,55 @@ class SamplePosteriorsExporter:
                         write_ndarray_to_tsv(std_out_file_name, std_array)
                         break
 
+            self._export_sample_name(sample_posterior_path, sample_name)
             self._export_sample_copy_number_log_posterior(
                 sample_posterior_path,
+                self.denoising_calling_workspace.targets_interval_list,
                 self.denoising_calling_workspace.log_q_c_stc.get_value(borrow=True)[si, ...])
+
+
+class PloidyModelExporter:
+    """ Writes ploidy model parameters to disk """
+    def __init__(self,
+                 ploidy_config: PloidyModelConfig,
+                 ploidy_workspace: PloidyWorkspace,
+                 ploidy_model: PloidyModel,
+                 ploidy_model_approx: pm.MeanField,
+                 output_path: str):
+        assert_output_path_writable(output_path)
+        self.ploidy_config = ploidy_config
+        self.ploidy_workspace = ploidy_workspace
+        self.ploidy_model = ploidy_model
+        self.ploidy_model_approx = ploidy_model_approx
+        self.output_path = output_path
+        self._approx_var_set, self._approx_mu_map, self._approx_std_map = _extract_meanfield_posterior_parameters(
+            self.ploidy_model_approx)
+
+    def __call__(self):
+        # export gcnvkernel version
+        _export_dict_to_json_file(
+            os.path.join(self.output_path, "gcnvkernel_version.json"),
+            {'version': gcnvkernel_version},
+            {})
+
+        # export ploidy config
+        _export_dict_to_json_file(
+            os.path.join(self.output_path, "ploidy_config.json"),
+            self.ploidy_config.__dict__,
+            {'contig_ploidy_prior_map', 'contig_set', 'num_ploidy_states'})
+
+        # export interval list
+        write_interval_list_to_tsv_file(os.path.join(self.output_path, "interval_list.tsv"),
+                                        self.ploidy_workspace.targets_metadata.targets_interval_list)
+
+        # export global variables in the posterior
+        for var_name in self.ploidy_model.global_var_registry:
+            assert var_name in self._approx_var_set, \
+                "a variable named {0} does not exist in the approximation".format(var_name)
+            _logger.info("exporting {0}...".format(var_name))
+            var_mu = self._approx_mu_map[var_name]
+            var_std = self._approx_std_map[var_name]
+            var_mu_out_path = os.path.join(self.output_path, 'mu_' + var_name + '.tsv')
+            write_ndarray_to_tsv(var_mu_out_path, var_mu)
+            var_std_out_path = os.path.join(self.output_path, 'std_' + var_name + '.tsv')
+            write_ndarray_to_tsv(var_std_out_path, var_std)

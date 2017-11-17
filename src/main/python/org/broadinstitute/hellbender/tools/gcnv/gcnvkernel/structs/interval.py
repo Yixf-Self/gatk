@@ -96,6 +96,12 @@ class IntervalAnnotation:
     def get_key() -> str:
         pass
 
+    def __repr__(self):
+        return repr(self.get_value())
+
+    def __str__(self):
+        return str(self.get_value())
+
 
 class GCContentAnnotation(IntervalAnnotation):
     """ This class represents GC content annotation that can be added to an Interval
@@ -128,6 +134,9 @@ class NameAnnotation(IntervalAnnotation):
     @staticmethod
     def get_key():
         return "NAME"
+
+    def __repr__(self):
+        return repr(self.get_value())
 
 
 interval_annotations_dict: Dict[str, IntervalAnnotation] = {
