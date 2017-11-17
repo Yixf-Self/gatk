@@ -168,12 +168,13 @@ class HybridInferenceTask(InferenceTask):
             self.hybrid_inference_params.convergence_snr_trigger_threshold,
             self.hybrid_inference_params.convergence_snr_countdown_window)
 
-        _logger.info("Setting up annealing ADVI...")
+        _logger.info("Setting up DA-ADVI...")
         with self.continuous_model:
-            initial_temperature = self.hybrid_inference_params.initial_temperature
-            self.temperature: types.TensorSharedVariable = th.shared(
-                np.asarray([initial_temperature], dtype=types.floatX))
-
+            if not hasattr(self, 'temperature'):
+                initial_temperature = self.hybrid_inference_params.initial_temperature
+                self.temperature: types.TensorSharedVariable = th.shared(
+                    np.asarray([initial_temperature], dtype=types.floatX))
+            initial_temperature = self.temperature.get_value()[0]
             if np.abs(initial_temperature - 1.0) < 1e-10:  # no annealing
                 temperature_update = None
             else:
@@ -230,6 +231,7 @@ class HybridInferenceTask(InferenceTask):
         self._t0 = None
         self._t1 = None
         self.elbo_hist: List[float] = []
+        self.rls_elbo_hist: List[float] = []
         self.snr_hist: List[float] = []
         self.i_epoch = 1
         self.i_advi = 1
@@ -309,6 +311,7 @@ class HybridInferenceTask(InferenceTask):
                     if snr is not None:
                         self.snr_hist.append(snr)
                     self.elbo_hist.append(-loss)
+                    self.rls_elbo_hist.append(elbo_mean)
                     progress_bar.set_description("({0} epoch {1}) ELBO: {2}, SNR: {3}, T: {4:.2f}".format(
                         self.advi_task_name,
                         self.i_epoch,
@@ -437,7 +440,7 @@ class HybridInferenceParameters:
                  max_advi_iter_subsequent_epochs: int = 100,
                  min_training_epochs: int = 5,
                  max_training_epochs: int = 50,
-                 initial_temperature: float = 10.0,
+                 initial_temperature: float = 2.0,
                  num_thermal_epochs: int = 20,
                  track_model_params: bool = False,
                  track_model_params_every: int = 10,

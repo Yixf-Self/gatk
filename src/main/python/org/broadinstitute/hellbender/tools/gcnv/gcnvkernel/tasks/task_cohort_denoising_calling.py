@@ -2,6 +2,7 @@ import numpy as np
 import pymc3 as pm
 import logging
 from typing import Callable
+import theano as th
 
 from .inference_task_base import Sampler, Caller, CallerUpdateSummary, HybridInferenceTask, HybridInferenceParameters
 from .. import config, types
@@ -17,10 +18,11 @@ class HHMMClassAndCopyNumberCaller(Caller):
     def __init__(self,
                  calling_config: CopyNumberCallingConfig,
                  hybrid_inference_params: HybridInferenceParameters,
-                 shared_workspace: DenoisingCallingWorkspace):
+                 shared_workspace: DenoisingCallingWorkspace,
+                 temperature: types.TensorSharedVariable):
         self.hybrid_inference_params = hybrid_inference_params
         self.copy_number_basic_caller = HHMMClassAndCopyNumberBasicCaller(
-            calling_config, hybrid_inference_params, shared_workspace, disable_class_update=False)
+            calling_config, hybrid_inference_params, shared_workspace, False, temperature)
 
     def call(self) -> 'HHMMClassAndCopyNumberCallerUpdateSummary':
         (copy_number_update_s, copy_number_log_likelihoods_s,
@@ -112,8 +114,11 @@ class CohortDenoisingAndCallingTask(HybridInferenceTask):
             copy_number_caller = None
         else:
             _logger.info("Instantiating the copy number caller...")
+            initial_temperature = hybrid_inference_params.initial_temperature
+            self.temperature: types.TensorSharedVariable = th.shared(
+                np.asarray([initial_temperature], dtype=types.floatX))
             copy_number_caller = HHMMClassAndCopyNumberCaller(
-                calling_config, hybrid_inference_params, shared_workspace)
+                calling_config, hybrid_inference_params, shared_workspace, self.temperature)
 
         elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_targets
         super().__init__(hybrid_inference_params, denoising_model, copy_number_emission_sampler, copy_number_caller,

@@ -69,12 +69,6 @@ group.add_argument("--sample_coverage_metadata",
                    default=argparse.SUPPRESS,
                    help="Coverage metadata of all samples (in .tsv format)")
 
-# group.add_argument("--sample_names_table",
-#                    type=str,
-#                    required=True,
-#                    default=argparse.SUPPRESS,
-#                    help="List of sample names to include in ploidy determination task (in .tsv format)")
-
 group.add_argument("--contig_ploidy_prior_table",
                    type=str,
                    required=True,
@@ -140,9 +134,6 @@ if __name__ == "__main__":
 
     # load targets interval list
     targets_interval_list = gcnvkernel.io.load_targets_tsv_file(args.targets_interval_list)
-
-    # # load sample names
-    # sample_names = gcnvkernel.SampleMetadataCollection.read_sample_names(args.sample_names_table)
 
     # load sample coverage metadata
     sample_metadata_collection = gcnvkernel.SampleMetadataCollection()

@@ -722,11 +722,13 @@ class HHMMClassAndCopyNumberBasicCaller:
                  calling_config: CopyNumberCallingConfig,
                  inference_params: HybridInferenceParameters,
                  shared_workspace: DenoisingCallingWorkspace,
-                 disable_class_update: bool):
+                 disable_class_update: bool,
+                 temperature: types.TensorSharedVariable):
         self.calling_config = calling_config
         self.inference_params = inference_params
         self.shared_workspace = shared_workspace
         self.disable_class_update = disable_class_update
+        self.temperature = temperature
 
         # generate sample-specific inventory of copy number priors according to their baseline copy number state
         pi_skc = np.zeros((shared_workspace.num_samples, calling_config.num_copy_number_classes,
@@ -805,7 +807,9 @@ class HHMMClassAndCopyNumberBasicCaller:
 
             # step 2. run forward-backward and update copy number posteriors
             fb_result = self._hmm_q_copy_number.perform_forward_backward(
-                self.calling_config.num_copy_number_states, log_prior_c, log_trans_tcc,
+                self.calling_config.num_copy_number_states,
+                self.temperature.get_value()[0],
+                log_prior_c, log_trans_tcc,
                 log_copy_number_emission_tc, prev_log_posterior_tc)
             del log_prior_c
             del log_trans_tcc
@@ -853,6 +857,7 @@ class HHMMClassAndCopyNumberBasicCaller:
         """
         fb_result = self._hmm_q_class.perform_forward_backward(
             self.calling_config.num_copy_number_classes,
+            self.temperature.get_value()[0],
             self.shared_workspace.log_prior_k,
             self.shared_workspace.log_trans_tkk,
             self.shared_workspace.log_class_emission_tk.get_value(borrow=True),

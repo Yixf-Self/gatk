@@ -2,6 +2,7 @@ import numpy as np
 import pymc3 as pm
 import logging
 from typing import Callable
+import theano as th
 
 from .inference_task_base import Sampler, Caller, CallerUpdateSummary, HybridInferenceTask, HybridInferenceParameters
 from .. import config, types
@@ -23,10 +24,11 @@ class HMMCopyNumberCaller(Caller):
     def __init__(self,
                  calling_config: CopyNumberCallingConfig,
                  hybrid_inference_params: HybridInferenceParameters,
-                 shared_workspace: DenoisingCallingWorkspace):
+                 shared_workspace: DenoisingCallingWorkspace,
+                 temperature: types.TensorSharedVariable):
         self.hybrid_inference_params = hybrid_inference_params
         self.copy_number_basic_caller = HHMMClassAndCopyNumberBasicCaller(
-            calling_config, hybrid_inference_params, shared_workspace, disable_class_update=True)
+            calling_config, hybrid_inference_params, shared_workspace, True, temperature)
 
     def call(self) -> 'HMMCopyNumberCallerUpdateSummary':
         copy_number_update_s, copy_number_log_likelihoods_s, _, _ = self.copy_number_basic_caller.call(
@@ -112,8 +114,11 @@ class CaseSampleCallingTask(HybridInferenceTask):
             copy_number_caller = None
         else:
             _logger.info("Instantiating the copy number caller...")
+            initial_temperature = hybrid_inference_params.initial_temperature
+            self.temperature: types.TensorSharedVariable = th.shared(
+                np.asarray([initial_temperature], dtype=types.floatX))
             copy_number_caller = HMMCopyNumberCaller(
-                calling_config, hybrid_inference_params, shared_workspace)
+                calling_config, hybrid_inference_params, shared_workspace, self.temperature)
 
         elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_targets
         opt = SampleSpecificAdamax(hybrid_inference_params.learning_rate,

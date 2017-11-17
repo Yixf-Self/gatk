@@ -8,11 +8,10 @@ import pandas as pd
 import pymc3 as pm
 import theano as th
 import theano.tensor as tt
-from pymc3 import Normal, Deterministic, DensityDist, Bound
+from pymc3 import Normal, Deterministic, DensityDist, Bound, Exponential
 
 from ..tasks.inference_task_base import HybridInferenceParameters, GeneralizedContinuousModel
 from . import commons
-from .dists import HalfFlat
 from .. import config, types
 from ..structs.interval import Interval
 from ..structs.metadata import TargetsIntervalListMetadata, SampleMetadataCollection
@@ -27,6 +26,8 @@ class PloidyModelConfig:
     def __init__(self,
                  contig_ploidy_prior_map: Dict[str, np.ndarray] = None,
                  mean_bias_sd: float = 1e-2,
+                 psi_j_scale: float = 1e-3,
+                 psi_s_scale: float = 1e-4,
                  mapping_error_rate: float = 1e-2):
         """
         todo
@@ -34,6 +35,8 @@ class PloidyModelConfig:
         """
         assert contig_ploidy_prior_map is not None
         self.mean_bias_sd = mean_bias_sd
+        self.psi_j_scale = psi_j_scale
+        self.psi_s_scale = psi_s_scale
         self.mapping_error_rate = mapping_error_rate
         self.contig_ploidy_prior_map, self.num_ploidy_states = self._get_validated_contig_ploidy_prior_map(
             contig_ploidy_prior_map)
@@ -80,7 +83,7 @@ class PloidyModelConfig:
 
     @staticmethod
     def expose_args(args: argparse.ArgumentParser):
-        group = args.add_argument_group(title="Contig ploidy calling arguments")
+        group = args.add_argument_group(title="Germline contig ploidy determination model hyperparameters")
         initializer_params = inspect.signature(PloidyModelConfig.__init__).parameters
 
         group.add_argument("--mean_bias_sd",
@@ -92,6 +95,16 @@ class PloidyModelConfig:
                            type=float,
                            help="Typical mapping error rate",
                            default=initializer_params['mapping_error_rate'].default)
+
+        group.add_argument("--psi_j_scale",
+                           type=float,
+                           help="Global contig-level unexplained variance scale",
+                           default=initializer_params['psi_j_scale'].default)
+
+        group.add_argument("--psi_s_scale",
+                           type=float,
+                           help="Sample-specific contig-level unexplained variance scale",
+                           default=initializer_params['psi_s_scale'].default)
 
     @staticmethod
     def from_args_dict(args_dict: Dict):
@@ -184,15 +197,30 @@ class PloidyModel(GeneralizedContinuousModel):
         q_ploidy_sjk = tt.exp(ploidy_workspace.log_q_ploidy_sjk)
         eps = ploidy_config.mapping_error_rate
 
+        register_as_global = self.register_as_global
+        register_as_sample_specific = self.register_as_sample_specific
+
         # mean per-contig bias
         mean_bias_j = self.PositiveNormal('mean_bias_j',
                                           mu=1.0,
                                           sd=ploidy_config.mean_bias_sd,
-                                          shape=ploidy_workspace.num_contigs)
+                                          shape=(ploidy_workspace.num_contigs,))
+        register_as_global(mean_bias_j)
 
-        # todo informative prior?
-        # per-contig NB over-dispersion parameter
-        alpha_j = HalfFlat('alpha_j', shape=ploidy_workspace.num_contigs)
+        # contig coverage unexplained variance
+        psi_j = Exponential(name='psi_j',
+                            lam=1.0 / ploidy_config.psi_j_scale,
+                            shape=(ploidy_workspace.num_contigs,))
+        register_as_global(psi_j)
+
+        # sample-specific contig unexplained variance
+        psi_s = Exponential(name='psi_s',
+                            lam=1.0 / ploidy_config.psi_j_scale,
+                            shape=(ploidy_workspace.num_samples,))
+        register_as_sample_specific(psi_s)
+
+        # convert "unexplained variance" to negative binomial over-dispersion
+        alpha_sj = tt.inv((tt.exp(psi_j.dimshuffle('x', 0) + psi_s.dimshuffle(0, 'x')) - 1.0))
 
         # mean ploidy per contig per sample
         mean_ploidy_sj = tt.sum(tt.exp(ploidy_workspace.log_q_ploidy_sjk)
@@ -214,7 +242,7 @@ class PloidyModel(GeneralizedContinuousModel):
 
         def _get_logp_sjk(_n_sj):
             _logp_sjk = commons.negative_binomial_logp(mu_sjk,  # mean
-                                                       alpha_j.dimshuffle('x', 0, 'x'),  # over-dispersion
+                                                       alpha_sj.dimshuffle(0, 1, 'x'),  # over-dispersion
                                                        _n_sj.dimshuffle(0, 1, 'x'))  # contig counts
             return _logp_sjk
 

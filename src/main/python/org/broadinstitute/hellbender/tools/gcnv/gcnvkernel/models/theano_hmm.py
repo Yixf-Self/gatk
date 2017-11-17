@@ -2,7 +2,7 @@ import numpy as np
 import theano as th
 import theano.tensor as tt
 import pymc3 as pm
-from typing import Optional, Tuple
+from typing import Optional
 from .. import types
 from . import commons
 
@@ -28,12 +28,13 @@ class TheanoForwardBackward:
 
     def perform_forward_backward(self,
                                  num_states: int,
+                                 temperature: float,
                                  log_prior_c: np.ndarray,
                                  log_trans_tcc: np.ndarray,
                                  log_emission_tc: np.ndarray,
                                  prev_log_posterior_tc: np.ndarray):
         return self._forward_backward_theano_func(
-            num_states, log_prior_c, log_trans_tcc, log_emission_tc, prev_log_posterior_tc)
+            num_states, temperature, log_prior_c, log_trans_tcc, log_emission_tc, prev_log_posterior_tc)
 
     # todo update docstring
     @th.configparser.change_flags(compute_test_value="ignore")
@@ -42,6 +43,7 @@ class TheanoForwardBackward:
 
         The theano function takes 5 inputs:
             num_states (integer scalar),
+            temperature (float scalar),
             log_prior_c (float vector),
             og_trans_tcc (float tensor3),
             log_emission_tc (float matrix)
@@ -55,13 +57,14 @@ class TheanoForwardBackward:
         :return: a theano function
         """
         num_states = tt.iscalar('num_states')
+        temperature = tt.scalar('temperature')
         log_prior_c = tt.vector('log_prior_c')
         log_trans_tcc = tt.tensor3('log_trans_tcc')
         log_emission_tc = tt.matrix('log_emission_tc')
         prev_log_posterior_tc = tt.matrix('prev_log_posterior_tc')
 
         new_log_posterior_tc, log_data_likelihood_t, alpha_tc, beta_tc = self._get_symbolic_log_posterior(
-            num_states, log_prior_c, log_trans_tcc, log_emission_tc, self.resolve_nans)
+            num_states, temperature, log_prior_c, log_trans_tcc, log_emission_tc, self.resolve_nans)
 
         admixed_log_posterior_tc = commons.safe_logaddexp(
             new_log_posterior_tc + np.log(self.admixing_rate),
@@ -71,7 +74,7 @@ class TheanoForwardBackward:
         update_norm_t = commons.get_jensen_shannon_divergence(admixed_log_posterior_tc, prev_log_posterior_tc)
 
         ext_output = [alpha_tc, beta_tc] if self.include_alpha_beta_output else []
-        inputs = [num_states, log_prior_c, log_trans_tcc, log_emission_tc, prev_log_posterior_tc]
+        inputs = [num_states, temperature, log_prior_c, log_trans_tcc, log_emission_tc, prev_log_posterior_tc]
         if self.log_posterior_output is not None:
             return th.function(inputs=inputs,
                                outputs=[update_norm_t, log_data_likelihood] + ext_output,
@@ -82,6 +85,7 @@ class TheanoForwardBackward:
 
     @staticmethod
     def _get_symbolic_log_posterior(num_states: tt.iscalar,
+                                    temperature: tt.scalar,
                                     log_prior_c: types.TheanoVector,
                                     log_trans_tcc: types.TheanoTensor3,
                                     log_emission_tc: types.TheanoMatrix,
@@ -148,7 +152,7 @@ class TheanoForwardBackward:
 
         # concatenate with the last beta and reverse
         beta_full_outputs = tt.concatenate((beta_last.dimshuffle('x', 0), beta_outputs))[::-1, :]
-        log_unnormalized_posterior_probs = alpha_full_outputs + beta_full_outputs
+        log_unnormalized_posterior_probs = tt.inv(temperature) * (alpha_full_outputs + beta_full_outputs)
         log_data_likelihood = pm.math.logsumexp(log_unnormalized_posterior_probs, axis=1)
         log_posterior_probs = log_unnormalized_posterior_probs - log_data_likelihood
 
