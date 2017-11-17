@@ -13,6 +13,7 @@ import org.broadinstitute.hellbender.cmdline.CommandLineProgram;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGroup;
 import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.tools.copynumber.coverage.readcount.SimpleCount;
 import org.broadinstitute.hellbender.tools.copynumber.coverage.readcount.SimpleCountCollection;
 import org.broadinstitute.hellbender.tools.copynumber.formats.CopyNumberStandardArgument;
 import org.broadinstitute.hellbender.tools.copynumber.formats.collections.RecordCollection;
@@ -181,6 +182,10 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
             final SimpleCountCollection readCounts = SimpleCountCollection.read(inputReadCountFile);
             Utils.validateArg(readCounts.getIntervals().equals(intervals),
                     String.format("Intervals for read-count file %s do not match those in other read-count files.", inputReadCountFile));
+            coverageMetadatas.add(new CoverageMetadata(
+                    readCounts.getSampleName(),
+                    readCounts.getRecords().stream()
+                             //TODO
         }
         new CoverageMetadataCollection(coverageMetadatas, contigs).write(sampleCoverageMetadataFile);
     }
