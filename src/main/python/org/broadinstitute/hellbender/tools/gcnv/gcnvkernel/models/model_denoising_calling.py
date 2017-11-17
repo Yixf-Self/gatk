@@ -274,7 +274,6 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
 
         # auxiliary variables
         c_map_st = np.zeros((shared_workspace.num_samples, shared_workspace.num_targets), dtype=np.int)
-        c_mean_s = np.zeros((shared_workspace.num_samples,), dtype=types.floatX)
 
         log_p_alt = np.log(calling_config.p_alt)
         log_p_baseline = np.log(1.0 - calling_config.max_copy_number * calling_config.p_alt)
@@ -283,11 +282,9 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
             log_q_c_stc[si, :, :] = log_p_alt
             log_q_c_stc[si, :, sample_baseline_copy_number] = log_p_baseline
             c_map_st[si, :] = sample_baseline_copy_number
-            c_mean_s[si] = sample_baseline_copy_number  # close enough for initialization
 
         shared_workspace.log_q_c_stc = th.shared(log_q_c_stc, name="log_q_c_stc", borrow=config.borrow_numpy)
         shared_workspace.c_map_st = th.shared(c_map_st, name="c_map_st", borrow=config.borrow_numpy)
-        shared_workspace.c_mean_s = th.shared(c_mean_s, name="c_mean_s", borrow=config.borrow_numpy)
 
 
 class DenoisingCallingWorkspace:
@@ -349,7 +346,6 @@ class DenoisingCallingWorkspace:
 
         # auxiliary
         self.c_map_st: types.TensorSharedVariable = None
-        self.c_mean_s: types.TensorSharedVariable = None
 
         # copy number emission log posterior
         #   updated by LogEmissionPosteriorSampler.update_log_copy_number_emission_posterior()
@@ -568,7 +564,7 @@ class DenoisingModel(GeneralizedContinuousModel):
         # useful expressions
         bias_st = tt.exp(log_bias_st)
 
-        mean_mapping_error_correction_s: types.TheanoVector = eps * read_depth_s * shared_workspace.c_mean_s
+        mean_mapping_error_correction_s: types.TheanoVector = eps * read_depth_s
 
         mu_stc = ((1.0 - eps) * read_depth_s.dimshuffle(0, 'x', 'x')
                   * bias_st.dimshuffle(0, 1, 'x')
@@ -969,11 +965,7 @@ class HHMMClassAndCopyNumberBasicCaller:
     @th.configparser.change_flags(compute_test_value="off")
     def _get_update_aux_theano_func(self):
         c_map_st = tt.argmax(self.shared_workspace.log_q_c_stc, axis=2)
-        c_mean_s = tt.sum(tt.mean(tt.exp(self.shared_workspace.log_q_c_stc), axis=1)
-                          * self.shared_workspace.copy_number_values_c.dimshuffle('x', 0),
-                          axis=1)
 
         return th.function(inputs=[], outputs=[], updates=[
-            (self.shared_workspace.c_map_st, c_map_st),
-            (self.shared_workspace.c_mean_s, c_mean_s)
+            (self.shared_workspace.c_map_st, c_map_st)
         ])

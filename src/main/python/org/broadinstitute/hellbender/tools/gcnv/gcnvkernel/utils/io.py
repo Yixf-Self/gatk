@@ -168,7 +168,8 @@ def read_ndarray_from_npy(input_file: str) -> np.ndarray:
     return np.load(input_file, allow_pickle=False, fix_imports=False)
 
 
-def write_ndarray_to_tsv(output_file: str, array: np.ndarray, comment='#', delimiter='\t') -> None:
+def write_ndarray_to_tsv(output_file: str, array: np.ndarray, comment='#', delimiter='\t',
+                         extra_comment_lines: Optional[List[str]] = None) -> None:
     array = np.asarray(array)
     assert array.ndim <= 2
     shape = array.shape
@@ -179,8 +180,11 @@ def write_ndarray_to_tsv(output_file: str, array: np.ndarray, comment='#', delim
         array_matrix = array.reshape((array.size, 1))
 
     with open(output_file, 'w') as f:
-        f.write(comment + ' shape=' + repr(shape) + '\n')
-        f.write(comment + ' dtype=' + str(dtype) + '\n')
+        f.write(comment + 'shape=' + repr(shape) + '\n')
+        f.write(comment + 'dtype=' + str(dtype) + '\n')
+        if extra_comment_lines is not None:
+            for comment_line in extra_comment_lines:
+                f.write(comment + comment_line + '\n')
         for i_row in range(array_matrix.shape[0]):
             row = array_matrix[i_row, :]
             row_repr = delimiter.join([repr(x) for x in row])
@@ -449,22 +453,22 @@ class SampleDenoisingAndCallingPosteriorsExporter:
 
     @staticmethod
     def _export_sample_copy_number_log_posterior(sample_posterior_path: str,
-                                                 interval_list: List[Interval],
                                                  log_q_c_tc: np.ndarray,
-                                                 delimiter='\t'):
+                                                 delimiter='\t',
+                                                 comment='#',
+                                                 extra_comment_lines: Optional[List[str]] = None):
         assert isinstance(log_q_c_tc, np.ndarray)
         assert log_q_c_tc.ndim == 2
-        assert log_q_c_tc.shape[0] == len(interval_list)
         num_copy_number_states = log_q_c_tc.shape[1]
         copy_number_header_columns = [SampleDenoisingAndCallingPosteriorsExporter._copy_number_column_prefix + str(cn)
                                       for cn in range(num_copy_number_states)]
-        full_header = [_contig_column_header, _start_column_header, _end_column_header] + copy_number_header_columns
         with open(os.path.join(sample_posterior_path, "log_q_c_tc.tsv"), 'w') as f:
-            f.writelines([delimiter.join(full_header)])
-            for ti, interval in enumerate(interval_list):
-                interval_repr = [interval.contig, repr(interval.start), repr(interval.end)]
-                q_c_row_repr = [repr(x) for x in log_q_c_tc[ti, :]]
-                f.writelines([delimiter.join(interval_repr + q_c_row_repr)])
+            if extra_comment_lines is not None:
+                for comment_line in extra_comment_lines:
+                    f.write(comment + comment_line + '\n')
+            f.write(delimiter.join(copy_number_header_columns) + '\n')
+            for ti in range(log_q_c_tc.shape[0]):
+                f.write(delimiter.join([repr(x) for x in log_q_c_tc[ti, :]]) + '\n')
 
     @staticmethod
     def _export_sample_name(sample_posterior_path: str,
@@ -474,6 +478,7 @@ class SampleDenoisingAndCallingPosteriorsExporter:
 
     def __call__(self):
         for si, sample_name in enumerate(self.sample_names):
+            sample_name_comment_line = ['SAMPLE_NAME=' + sample_name]
             sample_posterior_path = os.path.join(self.output_path, self._sample_folder_prefix + repr(si))
             assert_output_path_writable(sample_posterior_path, try_creating_output_path=True)
 
@@ -483,19 +488,21 @@ class SampleDenoisingAndCallingPosteriorsExporter:
                         mean_out_file_name = os.path.join(
                             sample_posterior_path, export_recipe.output_filename + "_mean.tsv")
                         mean_array = export_recipe.slicer(si, self._approx_mu_map[var_name])
-                        write_ndarray_to_tsv(mean_out_file_name, mean_array)
+                        write_ndarray_to_tsv(mean_out_file_name, mean_array,
+                                             extra_comment_lines=sample_name_comment_line)
 
                         std_out_file_name = os.path.join(
                             sample_posterior_path, export_recipe.output_filename + "_std.tsv")
                         std_array = export_recipe.slicer(si, self._approx_std_map[var_name])
-                        write_ndarray_to_tsv(std_out_file_name, std_array)
+                        write_ndarray_to_tsv(std_out_file_name, std_array,
+                                             extra_comment_lines=sample_name_comment_line)
                         break
 
             self._export_sample_name(sample_posterior_path, sample_name)
             self._export_sample_copy_number_log_posterior(
                 sample_posterior_path,
-                self.denoising_calling_workspace.targets_interval_list,
-                self.denoising_calling_workspace.log_q_c_stc.get_value(borrow=True)[si, ...])
+                self.denoising_calling_workspace.log_q_c_stc.get_value(borrow=True)[si, ...],
+                extra_comment_lines=sample_name_comment_line)
 
 
 class PloidyModelExporter:

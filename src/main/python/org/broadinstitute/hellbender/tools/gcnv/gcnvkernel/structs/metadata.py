@@ -266,7 +266,6 @@ class SampleMetadataCollection:
             contig_list = []
             for row in reader:
                 row_num += 1
-                num_header_elems = None
                 if row_num == 1:  # header
                     num_header_elems = len(row)
                     assert num_header_elems > 1, "malformed sample coverage metadata file"

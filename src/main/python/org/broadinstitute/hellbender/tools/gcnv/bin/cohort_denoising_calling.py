@@ -1,4 +1,5 @@
 import os
+import shutil
 
 # set theano flags
 os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float64,optimizer=fast_run,compute_test_value=ignore"
@@ -190,3 +191,6 @@ if __name__ == "__main__":
     gcnvkernel.io.SampleDenoisingAndCallingPosteriorsExporter(
         shared_workspace, task.continuous_model, task.continuous_model_approx, sample_names,
         args.output_calls_path)()
+
+    # save a copy of targets in the calls path
+    shutil.copy(args.modeling_interval_list, os.path.join(args.output_calls_path, "interval_list.tsv"))

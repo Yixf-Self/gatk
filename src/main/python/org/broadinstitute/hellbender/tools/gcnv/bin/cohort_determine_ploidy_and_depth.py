@@ -109,6 +109,7 @@ gcnvkernel.HybridInferenceParameters.expose_args(
         "--max_advi_iter_subsequent_epochs": 1000,
         "--convergence_snr_averaging_window": 5000,
         "--convergence_snr_countdown_window": 100,
+        "--num_thermal_epochs": 10,
         "--max_calling_iters": 1,
         "--caller_update_convergence_threshold": 1e-3
     },
