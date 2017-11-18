@@ -36,13 +36,13 @@ import java.util.stream.Collectors;
  * A table specifying priors for the ploidy per contig is also required.
  *
  *  <p>
- *      If multiple samples are input, then the output is a model file (which can be used for subsequently determining
+ *      If multiple samples are input, then the output is a model (which can be used for subsequently determining
  *      ploidy in individual samples, see below), a table containing the global read-depth parameter for each sample,
  *      and a table containing the baseline ploidy per contig for each sample.
  *  </p>
  *
  *  <p>
- *      If a single sample and a model file are input, then only read-depth and ploidy tables for that sample
+ *      If a single sample and a model directory are input, then only read-depth and ploidy tables for that sample
  *      are output.
  *  </p>
  *
@@ -89,12 +89,11 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
 
     public static final String READ_DEPTH_TABLE_FILE_SUFFIX = ".readDepth.tsv";
     public static final String CONTIG_PLOIDY_TABLE_FILE_SUFFIX = ".contigPloidy.tsv";
-    public static final String PLOIDY_MODEL_FILE_SUFFIX = ".ploidyModel.tsv";
 
     @Argument(
             doc = "Input read-count files containing integer read counts in genomic intervals for all samples.  " +
                     "Intervals must be identical and in the same order for all samples.  " +
-                    "If only a single sample is specified, a model file must also be specified.  ",
+                    "If only a single sample is specified, a model directory must also be specified.  ",
             fullName = StandardArgumentDefinitions.INPUT_LONG_NAME,
             shortName = StandardArgumentDefinitions.INPUT_SHORT_NAME,
             minElements = 1
@@ -109,13 +108,13 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
     private File contigPloidyPriorsFile;
 
     @Argument(
-            doc = "Input ploidy-model file.  If only a single sample is specified, this model will be used.  " +
+            doc = "Input ploidy-model directory.  If only a single sample is specified, this model will be used.  " +
                     "If multiple samples are specified, a new model will be built and this input will be ignored.",
             fullName = CopyNumberStandardArgument.MODEL_LONG_NAME,
             shortName = CopyNumberStandardArgument.MODEL_SHORT_NAME,
             optional = true
     )
-    private File modelFile = null;
+    private String modelDir = null;
 
     @Argument(
             doc = "Prefix for output filenames.",
@@ -139,8 +138,6 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
 
     @Override
     protected Object doWork() {
-        //TODO different paths for cohort and case modes
-
         setModeAndValidateArguments();
 
         //read in count files and output intervals and sample x coverage-per-contig metadata table to temporary files
@@ -163,19 +160,20 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
     }
 
     private void setModeAndValidateArguments() {
-        if (modelFile == null) {
+        if (modelDir == null) {
             if (inputReadCountFiles.size() > 1) {
                 logger.info("Multiple samples provided, running in cohort mode...");
                 mode = Mode.COHORT;
             } else {
-                throw new UserException("Multiple samples must be provided if a ploidy-model file is not.");
+                throw new UserException("Multiple samples must be provided if a ploidy-model directory is not.");
             }
         } else {
+            Utils.validateArg(!new File(modelDir).exists(), "Ploidy-model directory does not exist.");
             if (inputReadCountFiles.size() > 1) {
-                logger.warn("Multiple samples and a ploidy-model file were provided; the latter will be ignored...");
+                logger.warn("Multiple samples and a ploidy-model directory were provided; the latter will be ignored...");
                 mode = Mode.COHORT;
             } else {
-                logger.info("A single sample and a ploidy-model file were provided, running in case mode...");
+                logger.info("A single sample and a ploidy-model directory were provided, running in case mode...");
                 mode = Mode.CASE;
             }
         }
@@ -274,8 +272,12 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                 "--sample_coverage_metadata=" + sampleCoverageMetadataFile.getAbsolutePath(),
                 "--contig_ploidy_prior_table=" + contigPloidyPriorsFile.getAbsolutePath(),
                 "--output_contig_ploidy=" + outputDirArg + outputPrefix + CONTIG_PLOIDY_TABLE_FILE_SUFFIX,
-                "--output_read_depth=" + outputDirArg + outputPrefix + READ_DEPTH_TABLE_FILE_SUFFIX,
-                "--output_ploidy_model_path=" + outputDirArg + outputPrefix + PLOIDY_MODEL_FILE_SUFFIX));
+                "--output_read_depth=" + outputDirArg + outputPrefix + READ_DEPTH_TABLE_FILE_SUFFIX));
+        if (mode == Mode.COHORT) {
+            arguments.add("--output_ploidy_model_path=" + outputDirArg + outputPrefix);
+        } else if (mode == Mode.CASE)  {
+            //TODO
+        }
         arguments.addAll(ploidyDeterminationArgumentCollection.generatePythonArguments());
         return executor.executeScript(
                 new Resource(DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT, DetermineGermlineContigPloidy.class),
