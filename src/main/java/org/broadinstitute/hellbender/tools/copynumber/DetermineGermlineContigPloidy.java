@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.copynumber;
 
+import org.apache.commons.collections4.ListUtils;
 import org.broadinstitute.barclay.argparser.Advanced;
 import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.ArgumentCollection;
@@ -28,7 +29,6 @@ import java.io.Serializable;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Model the baseline ploidy per contig for germline samples given their fragment counts.
@@ -82,8 +82,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         COHORT, CASE
     }
 
-    private static final String DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT_PATH =
-            "src/main/python/org/broadinstitute/hellbender/tools/gcnv/bin/determine_ploidy_and_depth.py";
+    private static final String DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT = "cohort_determine_ploidy_and_depth.py";
 
     public static final String CONTIG_PLOIDY_PRIORS_FILE_LONG_NAME = "contigPloidyPriors";
     public static final String CONTIG_PLOIDY_PRIORS_FILE_SHORT_NAME = "priors";
@@ -134,7 +133,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
 
     @Advanced
     @ArgumentCollection
-    private PloidyDeterminationArgumentCollection ploidyDeterminationArgumentCollection;
+    private PloidyDeterminationArgumentCollection ploidyDeterminationArgumentCollection = new PloidyDeterminationArgumentCollection();
 
     private Mode mode;
 
@@ -252,7 +251,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         private CoverageMetadataCollection(final List<CoverageMetadata> coverageMetadatas,
                                            final List<String> contigs) {
             super(coverageMetadatas,
-                    new TableColumnCollection(Stream.of(Collections.singletonList(SAMPLE_NAME_TABLE_COLUMN), contigs)),
+                    new TableColumnCollection(ListUtils.union(Collections.singletonList(SAMPLE_NAME_TABLE_COLUMN), contigs)),
                     dataLine -> new CoverageMetadata(
                             dataLine.get(SAMPLE_NAME_TABLE_COLUMN),
                             contigs.stream().collect(Collectors.toMap(
@@ -262,7 +261,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                                     LinkedHashMap::new))),
                     (coverageMetadata, dataLine) -> {
                             dataLine.append(coverageMetadata.sampleName);
-                            coverageMetadata.coveragePerContig.values().forEach(dataLine::append);});
+                            contigs.stream().map(coverageMetadata.coveragePerContig::get).forEach(dataLine::append);});
         }
     }
 
@@ -270,17 +269,18 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                                                                final File intervalsFile) {
         final PythonScriptExecutor executor = new PythonScriptExecutor(true);
         final String outputDirArg = Utils.nonEmpty(outputDir).endsWith(File.separator) ? outputDir : outputDir + File.separator;    //add trailing slash if necessary
+        final List<String> arguments = new ArrayList<>(Arrays.asList(
+                "--interval_list=" + intervalsFile.getAbsolutePath(),
+                "--sample_coverage_metadata=" + sampleCoverageMetadataFile.getAbsolutePath(),
+                "--contig_ploidy_prior_table=" + contigPloidyPriorsFile.getAbsolutePath(),
+                "--output_contig_ploidy=" + outputDirArg + outputPrefix + CONTIG_PLOIDY_TABLE_FILE_SUFFIX,
+                "--output_read_depth=" + outputDirArg + outputPrefix + READ_DEPTH_TABLE_FILE_SUFFIX,
+                "--output_ploidy_model_path=" + outputDirArg + outputPrefix + PLOIDY_MODEL_FILE_SUFFIX));
+        arguments.addAll(ploidyDeterminationArgumentCollection.generatePythonArguments());
         return executor.executeScript(
-                new Resource(DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT_PATH, null),
+                new Resource(DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT, DetermineGermlineContigPloidy.class),
                 null,
-                Arrays.asList(
-                        "--interval_list " + intervalsFile.getAbsolutePath(),
-                        "--sample_coverage_metadata " + sampleCoverageMetadataFile.getAbsolutePath(),
-                        "--contig_ploidy_prior_table " + contigPloidyPriorsFile.getAbsolutePath(),
-                        "--output_contig_ploidy " + outputDirArg + outputPrefix + CONTIG_PLOIDY_TABLE_FILE_SUFFIX,
-                        "--output_read_depth " + outputDirArg + outputPrefix + READ_DEPTH_TABLE_FILE_SUFFIX,
-                        "--output_ploidy_model_path " + outputDirArg + outputPrefix + PLOIDY_MODEL_FILE_SUFFIX,
-                        ploidyDeterminationArgumentCollection.generatePythonArgumentString()));
+                arguments);
     }
 
     private static final class PloidyDeterminationArgumentCollection implements Serializable {
@@ -318,10 +318,12 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         )
         private double samplePsiScale = 0.0001;
 
-        private String generatePythonArgumentString() {
-            return String.format(
-                    "--mean_bias_sd %f --mapping_error_rate %f --psi_j_scale %f --psi_s_scale %f",
-                    meanBiasStandardDeviation, mappingErrorRate, globalPsiScale, samplePsiScale);
+        private List<String> generatePythonArguments() {
+            return Arrays.asList(
+                    String.format("--mean_bias_sd=%f", meanBiasStandardDeviation),
+                    String.format("--mapping_error_rate=%f", mappingErrorRate),
+                    String.format("--psi_j_scale=%f", globalPsiScale),
+                    String.format("--psi_s_scale=%f", samplePsiScale));
         }
     }
 }
