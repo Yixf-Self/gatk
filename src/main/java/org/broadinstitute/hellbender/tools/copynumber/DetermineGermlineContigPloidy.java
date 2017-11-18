@@ -113,9 +113,10 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
             doc = "Input ploidy-model file.  If only a single sample is specified, this model will be used.  " +
                     "If multiple samples are specified, a new model will be built and this input will be ignored.",
             fullName = CopyNumberStandardArgument.MODEL_LONG_NAME,
-            shortName = CopyNumberStandardArgument.MODEL_SHORT_NAME
+            shortName = CopyNumberStandardArgument.MODEL_SHORT_NAME,
+            optional = true
     )
-    private File modelFile;
+    private File modelFile = null;
 
     @Argument(
             doc = "Prefix for output filenames.",
@@ -261,7 +262,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                                     LinkedHashMap::new))),
                     (coverageMetadata, dataLine) -> {
                             dataLine.append(coverageMetadata.sampleName);
-                            coverageMetadata.coveragePerContig.forEach(dataLine::append);});
+                            coverageMetadata.coveragePerContig.values().forEach(dataLine::append);});
         }
     }
 
