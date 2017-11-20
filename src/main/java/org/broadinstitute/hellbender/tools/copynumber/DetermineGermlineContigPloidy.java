@@ -110,7 +110,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
             fullName = CONTIG_PLOIDY_PRIORS_FILE_LONG_NAME,
             shortName = CONTIG_PLOIDY_PRIORS_FILE_SHORT_NAME
     )
-    private File contigPloidyPriorsFile;
+    private File inputContigPloidyPriorsFile;
 
     @Argument(
             doc = "Input ploidy-model directory.  If only a single sample is specified, this model will be used.  " +
@@ -119,7 +119,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
             shortName = CopyNumberStandardArgument.MODEL_SHORT_NAME,
             optional = true
     )
-    private String modelDir = null;
+    private String inputModelDir = null;
 
     @Argument(
             doc = "Prefix for output filenames.",
@@ -165,7 +165,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
     }
 
     private void setModeAndValidateArguments() {
-        if (modelDir == null) {
+        if (inputModelDir == null) {
             if (inputReadCountFiles.size() > 1) {
                 logger.info("Multiple samples provided, running in cohort mode...");
                 mode = Mode.COHORT;
@@ -173,7 +173,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                 throw new UserException("Multiple samples must be provided if a ploidy-model directory is not.");
             }
         } else {
-            Utils.validateArg(!new File(modelDir).exists(), "Ploidy-model directory does not exist.");
+            Utils.validateArg(!new File(inputModelDir).exists(), "Ploidy-model directory does not exist.");
             if (inputReadCountFiles.size() > 1) {
                 logger.warn("Multiple samples and a ploidy-model directory were provided; the latter will be ignored...");
                 mode = Mode.COHORT;
@@ -187,7 +187,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                 "List of input read-count files cannot contain duplicates.");
         inputReadCountFiles.forEach(IOUtils::canReadFile);
 
-        IOUtils.canReadFile(contigPloidyPriorsFile);
+        IOUtils.canReadFile(inputContigPloidyPriorsFile);
 
         Utils.nonNull(outputPrefix);
         if (!new File(outputDir).exists()) {
@@ -276,7 +276,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         final List<String> arguments = new ArrayList<>(Arrays.asList(
                 "--interval_list=" + intervalsFile.getAbsolutePath(),
                 "--sample_coverage_metadata=" + sampleCoverageMetadataFile.getAbsolutePath(),
-                "--contig_ploidy_prior_table=" + contigPloidyPriorsFile.getAbsolutePath(),
+                "--contig_ploidy_prior_table=" + inputContigPloidyPriorsFile.getAbsolutePath(),
                 "--output_contig_ploidy=" + outputDirArg + outputPrefix + CONTIG_PLOIDY_TABLE_FILE_SUFFIX,
                 "--output_read_depth=" + outputDirArg + outputPrefix + READ_DEPTH_TABLE_FILE_SUFFIX));
         if (mode == Mode.COHORT) {

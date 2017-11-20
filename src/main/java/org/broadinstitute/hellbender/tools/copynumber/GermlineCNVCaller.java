@@ -1,6 +1,5 @@
 package org.broadinstitute.hellbender.tools.copynumber;
 
-import org.apache.commons.collections4.ListUtils;
 import org.broadinstitute.barclay.argparser.Advanced;
 import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.ArgumentCollection;
@@ -9,25 +8,16 @@ import org.broadinstitute.barclay.help.DocumentedFeature;
 import org.broadinstitute.hellbender.cmdline.CommandLineProgram;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGroup;
-import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.exceptions.UserException;
-import org.broadinstitute.hellbender.tools.copynumber.coverage.readcount.SimpleCount;
-import org.broadinstitute.hellbender.tools.copynumber.coverage.readcount.SimpleCountCollection;
 import org.broadinstitute.hellbender.tools.copynumber.formats.CopyNumberStandardArgument;
-import org.broadinstitute.hellbender.tools.copynumber.formats.collections.RecordCollection;
-import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.io.Resource;
-import org.broadinstitute.hellbender.utils.param.ParamUtils;
 import org.broadinstitute.hellbender.utils.python.PythonScriptExecutor;
-import org.broadinstitute.hellbender.utils.tsv.TableColumnCollection;
 
 import java.io.File;
 import java.io.Serializable;
 import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * Denoise and call copy-number variants in germline samples given their fragment counts and the corresponding output
@@ -129,7 +119,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             shortName = CopyNumberStandardArgument.MODEL_SHORT_NAME,
             optional = true
     )
-    private String modelDir = null;
+    private String inputModelDir = null;
 
     @Argument(
             doc = "Input annotated-interval file containing annotations for GC content in genomic intervals (output of AnnotateIntervals).  " +
@@ -139,7 +129,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             shortName = CopyNumberStandardArgument.ANNOTATED_INTERVALS_FILE_SHORT_NAME,
             optional = true
     )
-    private File annotatedIntervalsFile = null;
+    private File inputAnnotatedIntervalsFile = null;
 
     @Argument(
             doc = "Prefix for output filenames.",
@@ -185,7 +175,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
     }
 
     private void setModeAndValidateArguments() {
-        if (modelDir == null) {
+        if (inputModelDir == null) {
             if (inputReadCountFiles.size() > 1) {
                 logger.info("Multiple samples provided, running in cohort mode...");
                 mode = Mode.COHORT;
@@ -193,7 +183,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
                 throw new UserException("Multiple samples must be provided if a denoising-model directory is not.");
             }
         } else {
-            Utils.validateArg(!new File(modelDir).exists(), "Denoising-model directory does not exist.");
+            Utils.validateArg(!new File(inputModelDir).exists(), "Denoising-model directory does not exist.");
             if (inputReadCountFiles.size() > 1) {
                 logger.warn("Multiple samples and a denoising-model directory were provided; the latter will be ignored...");
                 mode = Mode.COHORT;
@@ -211,8 +201,8 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         IOUtils.canReadFile(inputReadDepthTableFile);
         IOUtils.canReadFile(inputContigPloidyTableFile);
 
-        if (annotatedIntervalsFile != null) {
-            IOUtils.canReadFile(annotatedIntervalsFile);
+        if (inputAnnotatedIntervalsFile != null) {
+            IOUtils.canReadFile(inputAnnotatedIntervalsFile);
             if (mode == Mode.CASE) {
                 logger.warn("Running in case mode, but an annotated-intervals file was provided; it will be ignored...");
             }
@@ -238,22 +228,24 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         arguments.addAll(germlineDenoisingArgumentCollection.generatePythonArguments());
         arguments.addAll(germlineCallingArgumentCollection.generatePythonArguments());
 
-        if (annotatedIntervalsFile != null) {
+        if (inputAnnotatedIntervalsFile != null) {
             arguments.add("--enable_explicit_gc_bias_modeling True");
         }
 
+        final String script;
         if (mode == Mode.COHORT) {
             arguments.add("--output_model_path=" + outputDirArg + outputPrefix);
-            return executor.executeScript(
-                    new Resource(COHORT_DENOISING_CALLING_PYTHON_SCRIPT, GermlineCNVCaller.class),
-                    null,
-                    arguments);
+            script = COHORT_DENOISING_CALLING_PYTHON_SCRIPT;
+
         } else {
-            return executor.executeScript(
-                    new Resource(CASE_SAMPLE_CALLING_PYTHON_SCRIPT, GermlineCNVCaller.class),
-                    null,
-                    arguments);
+            //TODO
+            arguments.add("--input_model_path=" + inputModelDir + outputPrefix);
+            script = CASE_SAMPLE_CALLING_PYTHON_SCRIPT;
         }
+        return executor.executeScript(
+                new Resource(script, GermlineCNVCaller.class),
+                null,
+                arguments);
     }
 
     private static final class GermlineDenoisingArgumentCollection implements Serializable {
