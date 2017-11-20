@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  * A table specifying priors for the ploidy per contig is also required.
  *
  *  <p>
- *      If multiple samples are input, then the output is a model (which can be used for subsequently determining
+ *      If multiple samples are input, then the output is a model directory (which can be used for subsequently determining
  *      ploidy in individual samples, see below), a table containing the global read-depth parameter for each sample,
  *      and a table containing the baseline ploidy per contig for each sample.
  *  </p>
@@ -44,6 +44,11 @@ import java.util.stream.Collectors;
  *  <p>
  *      If a single sample and a model directory are input, then only read-depth and ploidy tables for that sample
  *      are output.
+ *  </p>
+ *
+ *  <p>
+ *      If an optional  GC-content annotated-interval file is provided, then explicit GC-bias correction will be performed
+ *      by the denoising model.  In this case, all intervals specified by -L must be contained in this file.
  *  </p>
  *
  * TODO Mehrtash can add documentation here
@@ -182,6 +187,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                 "List of input read-count files cannot contain duplicates.");
         inputReadCountFiles.forEach(IOUtils::canReadFile);
 
+        IOUtils.canReadFile(contigPloidyPriorsFile);
 
         Utils.nonNull(outputPrefix);
         if (!new File(outputDir).exists()) {
