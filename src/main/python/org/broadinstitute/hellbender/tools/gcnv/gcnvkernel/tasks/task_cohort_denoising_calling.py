@@ -126,7 +126,6 @@ class CohortDenoisingAndCallingTask(HybridInferenceTask):
                          advi_task_name="denoising",
                          calling_task_name="CNV calling")
 
-    # todo
     def disengage(self):
         pass
 

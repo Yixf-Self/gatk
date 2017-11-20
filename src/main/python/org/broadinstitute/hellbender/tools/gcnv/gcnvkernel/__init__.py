@@ -3,9 +3,9 @@ from ._version import __version__
 
 # inference tasks
 from .tasks.inference_task_base import HybridInferenceParameters
-from .tasks.task_ploidy import PloidyInferenceTask
+from .tasks.task_cohort_ploidy_determination import PloidyInferenceTask
 from .tasks.task_cohort_denoising_calling import CohortDenoisingAndCallingTask
-from .tasks.task_case_sample_calling import CaseSampleCallingTask
+from .tasks.task_case_denoising_calling import CaseSampleDenoisingCallingTask
 
 # model configs and workspaces
 from .models.model_denoising_calling import CopyNumberCallingConfig, DenoisingModelConfig, DenoisingCallingWorkspace

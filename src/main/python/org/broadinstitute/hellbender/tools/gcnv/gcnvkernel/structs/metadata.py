@@ -57,7 +57,12 @@ class SampleCoverageMetadata:
         self.n_total = np.sum(self.n_j)
         self._contig_map: Dict[str, int] = {contig: j for j, contig in enumerate(contig_list)}
 
+    def _assert_contig_exists(self, contig: str):
+        assert contig in self._contig_map, \
+            "Sample ({0}) does not have coverage metadata for contig ({1})".format(self.sample_name, contig)
+
     def get_contig_total_count(self, contig: str):
+        self._assert_contig_exists(contig)
         return self.n_j[self._contig_map[contig]]
 
     def get_total_count(self):
@@ -96,10 +101,16 @@ class SamplePloidyMetadata:
         self.ploidy_genotyping_quality_j = ploidy_genotyping_quality_j.astype(types.floatX)
         self._contig_map: Dict[str, int] = {contig: j for j, contig in enumerate(contig_list)}
 
+    def _assert_contig_exists(self, contig: str):
+        assert contig in self._contig_map, \
+            "Sample ({0}) does not have ploidy metadata for contig ({1})".format(self.sample_name, contig)
+
     def get_contig_ploidy(self, contig: str):
+        self._assert_contig_exists(contig)
         return self.ploidy_j[self._contig_map[contig]]
 
     def get_contig_ploidy_genotyping_quality(self, contig: str):
+        self._assert_contig_exists(contig)
         return self.ploidy_genotyping_quality_j[self._contig_map[contig]]
 
 
@@ -216,54 +227,12 @@ class SampleMetadataCollection:
                 row = ([sample_name] + [repr(sample_coverage_metadata.n_j[j]) for j in range(len(contig_list))])
                 writer.writerow(row)
 
-    def write_sample_read_depth_metadata(self,
-                                         sample_names: List[str],
-                                         output_file: str):
-        from ..utils.io import assert_output_path_writable
-        assert len(sample_names) > 0
-        assert self.all_samples_have_read_depth_metadata(sample_names)
-        parent_path = os.path.dirname(output_file)
-        assert_output_path_writable(parent_path)
-        with open(output_file, 'w') as tsv_file:
-            writer = csv.writer(tsv_file, delimiter='\t')
-            header = [self._sample_name_column_name, self._read_depth_column_name]
-            writer.writerow(header)
-            for sample_name in sample_names:
-                sample_read_depth_metadata = self.get_sample_read_depth_metadata(sample_name)
-                row = [sample_name, repr(sample_read_depth_metadata.get_read_depth())]
-                writer.writerow(row)
-
-    def write_sample_contig_ploidy_metadata(self,
-                                            sample_names: List[str],
-                                            output_file: str):
-        from ..utils.io import assert_output_path_writable
-        assert len(sample_names) > 0
-        assert self.all_samples_have_ploidy_metadata(sample_names)
-        contig_list = self.sample_ploidy_metadata_dict[sample_names[0]].contig_list
-        for sample_name in sample_names:
-            assert self.sample_ploidy_metadata_dict[sample_name].contig_list == contig_list
-
-        parent_path = os.path.dirname(output_file)
-        assert_output_path_writable(parent_path)
-        with open(output_file, 'w') as tsv_file:
-            writer = csv.writer(tsv_file, delimiter='\t')
-            header = ([self._sample_name_column_name]
-                      + [self._ploidy_contig_header_prefix + contig for contig in contig_list]
-                      + [self._ploidy_gq_contig_header_prefix + contig for contig in contig_list])
-            writer.writerow(header)
-            for sample_name in sample_names:
-                sample_ploidy_metadata = self.get_sample_ploidy_metadata(sample_name)
-                row = ([sample_name]
-                       + [repr(sample_ploidy_metadata.ploidy_j[j]) for j in range(len(contig_list))]
-                       + [repr(sample_ploidy_metadata.ploidy_genotyping_quality_j[j]) for j in range(len(contig_list))])
-                writer.writerow(row)
-
     def read_sample_coverage_metadata(self, input_file: str) -> List[str]:
-        sample_names = []
         with open(input_file, 'r') as tsv_file:
             reader = csv.reader(tsv_file, delimiter='\t')
             row_num = 0
             contig_list = []
+            sample_names = []
             for row in reader:
                 row_num += 1
                 if row_num == 1:  # header
@@ -277,15 +246,19 @@ class SampleMetadataCollection:
                         for k in range(num_contigs)), "malformed sample ploidy metadata file"
                     for k in range(num_contigs):
                         contig_list.append(row[k + 1][len(self._contig_header_prefix):])
-                else:
-                    assert len(row) == num_header_elems
-                    sample_name = row[0]
-                    n_j = np.asarray([int(row[k + 1]) for k in range(num_contigs)], dtype=types.big_uint)
-                    self.add_sample_coverage_metadata(SampleCoverageMetadata(sample_name, n_j, contig_list))
-                    sample_names.append(sample_name)
+                    continue
+
+                assert len(row) == num_header_elems
+                sample_name = row[0]
+                n_j = np.asarray([int(row[k + 1]) for k in range(num_contigs)], dtype=types.big_uint)
+                self.add_sample_coverage_metadata(SampleCoverageMetadata(sample_name, n_j, contig_list))
+                sample_names.append(sample_name)
+
         return sample_names
 
+    # todo
     def read_sample_read_depth_metadata(self, input_file: str):
+        sample_names = []
         with open(input_file, 'r') as tsv_file:
             reader = csv.reader(tsv_file, delimiter='\t')
             expected_header = [self._sample_name_column_name, self._read_depth_column_name]
@@ -295,20 +268,27 @@ class SampleMetadataCollection:
                 if row_num == 1:
                     assert row == expected_header, "malformed sample read depth metadata file"
                     continue
+
+                assert len(row) == len(expected_header)
                 sample_name = row[0]
                 read_depth = float(row[1])
                 self.add_sample_read_depth_metadata(SampleReadDepthMetadata(sample_name, read_depth))
+                sample_names.append(sample_name)
 
-    def read_sample_ploidy_metadata(self, input_file: str):
+        return sample_names
+
+    # todo
+    def read_sample_ploidy_metadata(self, input_file: str) -> List[str]:
         with open(input_file, 'r') as tsv_file:
             reader = csv.reader(tsv_file, delimiter='\t')
             row_num = 0
             contig_list = []
+            sample_names = []
             for row in reader:
                 row_num += 1
                 if row_num == 1:
-                    assert row[0] == self._sample_name_column_name, "malformed sample ploidy metadata file"
                     num_header_elems = len(row)
+                    assert row[0] == self._sample_name_column_name, "malformed sample ploidy metadata file"
                     assert num_header_elems % 2 == 1, "malformed sample ploidy metadata file"
                     num_contigs = (num_header_elems - 1) // 2
                     assert all(
@@ -324,27 +304,14 @@ class SampleMetadataCollection:
                         contig_list.append(row[k + 1][len(self._ploidy_contig_header_prefix):])
                     continue
 
+                assert len(row) == num_header_elems
                 sample_name = row[0]
                 ploidy_j = np.asarray([int(row[k + 1]) for k in range(num_contigs)], dtype=types.small_uint)
                 ploidy_gq_j = np.asarray([float(row[k + num_contigs + 1]) for k in range(num_contigs)],
                                          dtype=types.floatX)
                 self.add_sample_ploidy_metadata(SamplePloidyMetadata(sample_name, ploidy_j, ploidy_gq_j, contig_list))
+                sample_names.append(sample_name)
 
-    @staticmethod
-    def read_sample_names(input_file: str) -> List[str]:
-        sample_names = []
-        with open(input_file, 'r') as tsv_file:
-            reader = csv.reader(tsv_file, delimiter='\t')
-            row_num = 0
-            for row in reader:
-                row_num += 1
-                if row_num == 1:  # header
-                    num_header_elems = len(row)
-                    assert num_header_elems == 1, "malformed sample names file"
-                    assert row[0] == SampleMetadataCollection._sample_name_column_name, "malformed sample names file"
-                else:
-                    assert len(row) == 1, "malformed sample names file"
-                    sample_names.append(row[0])
         return sample_names
 
 

@@ -16,6 +16,8 @@ from ..models.model_denoising_calling import DenoisingCallingWorkspace, Denoisin
 from ..models.model_denoising_calling import CopyNumberCallingConfig, DenoisingModelConfig
 from ..models.model_ploidy import PloidyWorkspace, PloidyModel
 from ..models.model_ploidy import PloidyModelConfig
+from ..models import commons as model_commons
+from ..structs.metadata import SampleReadDepthMetadata, SamplePloidyMetadata
 
 from .. import types
 from collections import namedtuple
@@ -275,6 +277,15 @@ def _export_dict_to_json_file(output_file, raw_dict, blacklisted_keys):
         json.dump(filtered_dict, fp, indent=1)
 
 
+def _check_gcnvkernel_version(gcnvkernel_version_json_file: str):
+    with open(gcnvkernel_version_json_file, 'r') as fp:
+        imported_gcnvkernel_version = json.load(fp)['version']
+        if imported_gcnvkernel_version != gcnvkernel_version:
+            _logger.warning("The exported model is created with a different gcnvkernel version {exported: (0}, "
+                            "current: {1}); backwards compatibility is not guaranteed; proceed at your own "
+                            "risk!").format(imported_gcnvkernel_version, gcnvkernel_version)
+
+
 class DenoisingModelExporter:
     """ Writes denoising model parameters to disk """
     def __init__(self,
@@ -355,14 +366,8 @@ class DenoisingModelImporter:
         self.input_path = input_path
 
     def __call__(self):
-        # import kernel version
-        with open(os.path.join(self.input_path, "gcnvkernel_version.json"), 'r') as fp:
-            imported_gcnvkernel_version = json.load(fp)['version']
-
-        if imported_gcnvkernel_version != gcnvkernel_version:
-            _logger.warning("The exported model is created with a different gcnvkernel version {exported: (0}, "
-                            "current: {1}); backwards compatibility is not guaranteed; proceed at your own "
-                            "risk!").format(imported_gcnvkernel_version, gcnvkernel_version)
+        # check if the model is created with the same gcnvkernel version
+        _check_gcnvkernel_version(os.path.join(self.input_path, "gcnvkernel_version.json"))
 
         # import denoising config
         with open(os.path.join(self.input_path, "denoising_config.json"), 'r') as fp:
@@ -421,9 +426,36 @@ class DenoisingModelImporter:
                         model_rho.get_value(borrow=True), vmap.slc, vmap.dtyp, var_rho), borrow=True)
 
 
+_ModelExportRecipe = namedtuple('ModelExportRecipe', 'var_name, output_filename, slicer')
+
+
+def _export_sample_specific_posteriors(sample_index: int,
+                                       sample_posterior_path: str,
+                                       approx_var_name_set: Set[str],
+                                       approx_mu_map: Dict[str, np.ndarray],
+                                       approx_std_map: Dict[str, np.ndarray],
+                                       export_recipes: List[_ModelExportRecipe],
+                                       extra_comment_lines: Optional[List[str]] = None):
+    for var_name in approx_var_name_set:
+        for export_recipe in export_recipes:
+            if export_recipe.var_name == var_name:
+                mean_out_file_name = os.path.join(
+                    sample_posterior_path, export_recipe.output_filename + "_mean.tsv")
+                mean_array = export_recipe.slicer(sample_index, approx_mu_map[var_name])
+                write_ndarray_to_tsv(mean_out_file_name, mean_array,
+                                     extra_comment_lines=extra_comment_lines)
+
+                std_out_file_name = os.path.join(
+                    sample_posterior_path, export_recipe.output_filename + "_std.tsv")
+                std_array = export_recipe.slicer(sample_index, approx_std_map[var_name])
+                write_ndarray_to_tsv(std_out_file_name, std_array,
+                                     extra_comment_lines=extra_comment_lines)
+                break
+
+
 class SampleDenoisingAndCallingPosteriorsExporter:
-    _sample_folder_prefix = "SAMPLE_"
-    _copy_number_column_prefix = "COPY_NUMBER_"
+    sample_folder_prefix = "SAMPLE_"
+    copy_number_column_prefix = "COPY_NUMBER_"
 
     """ Performs writing and reading of calls """
     def __init__(self,
@@ -442,8 +474,6 @@ class SampleDenoisingAndCallingPosteriorsExporter:
         self._approx_var_set, self._approx_mu_map, self._approx_std_map = _extract_meanfield_posterior_parameters(
             self.denoising_model_approx)
 
-    _ModelExportRecipe = namedtuple('ModelExportRecipe', 'var_name, output_filename, slicer')
-
     _model_sample_specific_var_export_recipes = [
         _ModelExportRecipe('read_depth_s_log__', 'log_read_depth', lambda si, array: array[si]),
         _ModelExportRecipe('gamma_s_log__', 'log_sample_specific_variance', lambda si, array: array[si]),
@@ -460,7 +490,7 @@ class SampleDenoisingAndCallingPosteriorsExporter:
         assert isinstance(log_q_c_tc, np.ndarray)
         assert log_q_c_tc.ndim == 2
         num_copy_number_states = log_q_c_tc.shape[1]
-        copy_number_header_columns = [SampleDenoisingAndCallingPosteriorsExporter._copy_number_column_prefix + str(cn)
+        copy_number_header_columns = [SampleDenoisingAndCallingPosteriorsExporter.copy_number_column_prefix + str(cn)
                                       for cn in range(num_copy_number_states)]
         with open(os.path.join(sample_posterior_path, "log_q_c_tc.tsv"), 'w') as f:
             if extra_comment_lines is not None:
@@ -479,26 +509,19 @@ class SampleDenoisingAndCallingPosteriorsExporter:
     def __call__(self):
         for si, sample_name in enumerate(self.sample_names):
             sample_name_comment_line = ['SAMPLE_NAME=' + sample_name]
-            sample_posterior_path = os.path.join(self.output_path, self._sample_folder_prefix + repr(si))
+            sample_posterior_path = os.path.join(self.output_path, self.sample_folder_prefix + repr(si))
             assert_output_path_writable(sample_posterior_path, try_creating_output_path=True)
 
-            for var_name in self._approx_var_set:
-                for export_recipe in self._model_sample_specific_var_export_recipes:
-                    if export_recipe.var_name == var_name:
-                        mean_out_file_name = os.path.join(
-                            sample_posterior_path, export_recipe.output_filename + "_mean.tsv")
-                        mean_array = export_recipe.slicer(si, self._approx_mu_map[var_name])
-                        write_ndarray_to_tsv(mean_out_file_name, mean_array,
-                                             extra_comment_lines=sample_name_comment_line)
+            # export sample-specific posteriors in the approximation
+            _export_sample_specific_posteriors(si, sample_posterior_path,
+                                               self._approx_var_set, self._approx_mu_map, self._approx_std_map,
+                                               self._model_sample_specific_var_export_recipes,
+                                               sample_name_comment_line)
 
-                        std_out_file_name = os.path.join(
-                            sample_posterior_path, export_recipe.output_filename + "_std.tsv")
-                        std_array = export_recipe.slicer(si, self._approx_std_map[var_name])
-                        write_ndarray_to_tsv(std_out_file_name, std_array,
-                                             extra_comment_lines=sample_name_comment_line)
-                        break
-
+            # export sample name
             self._export_sample_name(sample_posterior_path, sample_name)
+
+            # export copy number posterior
             self._export_sample_copy_number_log_posterior(
                 sample_posterior_path,
                 self.denoising_calling_workspace.log_q_c_stc.get_value(borrow=True)[si, ...],
@@ -550,3 +573,141 @@ class PloidyModelExporter:
             write_ndarray_to_tsv(var_mu_out_path, var_mu)
             var_std_out_path = os.path.join(self.output_path, 'std_' + var_name + '.tsv')
             write_ndarray_to_tsv(var_std_out_path, var_std)
+
+
+class SamplePloidyExporter:
+    # filenames
+    sample_folder_prefix = "SAMPLE_"
+    contig_ploidy_tsv_file = 'contig_ploidy.tsv'
+    contig_ploidy_gq_tsv_file = 'contig_ploidy_GQ.tsv'
+    read_depth_tsv_file = 'global_read_depth.tsv'
+    sample_name_txt_file = 'sample_name.txt'
+    global_read_depth_column_name = 'GLOBAL_READ_DEPTH'
+
+    def __init__(self,
+                 ploidy_config: PloidyModelConfig,
+                 ploidy_workspace: PloidyWorkspace,
+                 ploidy_model: PloidyModel,
+                 ploidy_model_approx: pm.MeanField,
+                 output_path: str):
+        self.ploidy_config = ploidy_config
+        self.ploidy_workspace = ploidy_workspace
+        self.ploidy_model = ploidy_model
+        self.ploidy_model_approx = ploidy_model_approx
+        self.output_path = output_path
+        self._approx_var_set, self._approx_mu_map, self._approx_std_map = _extract_meanfield_posterior_parameters(
+            self.ploidy_model_approx)
+
+    _model_sample_specific_var_export_recipes = [
+        _ModelExportRecipe('psi_s_log__', 'log_sample_specific_variance', lambda si, array: array[si])
+    ]
+
+    @staticmethod
+    def _export_sample_name(sample_posterior_path: str,
+                            sample_name: str):
+        with open(os.path.join(sample_posterior_path, SamplePloidyExporter.sample_name_txt_file), 'w') as f:
+            f.write(sample_name + '\n')
+
+    @staticmethod
+    def _export_sample_contig_ploidy(sample_posterior_path: str,
+                                     sample_ploidy_metadata: SamplePloidyMetadata,
+                                     extra_comment_lines: List[str] = None,
+                                     delimiter='\t',
+                                     comment='#'):
+        with open(os.path.join(sample_posterior_path, SamplePloidyExporter.contig_ploidy_tsv_file), 'w') as f:
+            if extra_comment_lines is not None:
+                for comment_line in extra_comment_lines:
+                    f.write(comment + comment_line + '\n')
+            header = delimiter.join(sample_ploidy_metadata.contig_list)
+            f.write(header + '\n')
+            dataline = delimiter.join([repr(pl) for pl in sample_ploidy_metadata.ploidy_j])
+            f.write(dataline + '\n')
+
+    @staticmethod
+    def _export_sample_contig_ploidy_gq(sample_posterior_path: str,
+                                        sample_ploidy_metadata: SamplePloidyMetadata,
+                                        extra_comment_lines: List[str] = None,
+                                        delimiter='\t',
+                                        comment='#'):
+        with open(os.path.join(sample_posterior_path, SamplePloidyExporter.contig_ploidy_gq_tsv_file), 'w') as f:
+            if extra_comment_lines is not None:
+                for comment_line in extra_comment_lines:
+                    f.write(comment + comment_line + '\n')
+            header = delimiter.join(sample_ploidy_metadata.contig_list)
+            f.write(header + '\n')
+            dataline = delimiter.join([repr(pl) for pl in sample_ploidy_metadata.ploidy_genotyping_quality_j])
+            f.write(dataline + '\n')
+
+    @staticmethod
+    def _export_sample_read_depth(sample_posterior_path: str,
+                                  sample_read_depth_metadata: SampleReadDepthMetadata,
+                                  extra_comment_lines: List[str] = None,
+                                  comment='#'):
+        with open(os.path.join(sample_posterior_path, SamplePloidyExporter.read_depth_tsv_file), 'w') as f:
+            if extra_comment_lines is not None:
+                for comment_line in extra_comment_lines:
+                    f.write(comment + comment_line + '\n')
+            f.write(SamplePloidyExporter.global_read_depth_column_name + '\n')
+            f.write(repr(sample_read_depth_metadata.read_depth) + '\n')
+
+    def __call__(self):
+        for si, sample_name in enumerate(self.ploidy_workspace.sample_names):
+            sample_name_comment_line = ['SAMPLE_NAME=' + sample_name]
+            sample_posterior_path = os.path.join(self.output_path, self.sample_folder_prefix + repr(si))
+            assert_output_path_writable(sample_posterior_path, try_creating_output_path=True)
+
+            # find best contig ploidy calls and calculate ploidy genotyping quality
+            # todo warn if ploidy genotyping quality is low?
+            # todo warn if ploidy genotyping is incompatible with a given list of sex genotypes?
+            ploidy_j = np.zeros((self.ploidy_workspace.num_contigs,), dtype=types.small_uint)
+            ploidy_genotyping_quality_j = np.zeros((self.ploidy_workspace.num_contigs,), dtype=types.floatX)
+            log_q_ploidy_jk = self.ploidy_workspace.log_q_ploidy_sjk.get_value(borrow=True)[si, :, :]
+            for j in range(self.ploidy_workspace.num_contigs):
+                ploidy_j[j], ploidy_genotyping_quality_j[j] = model_commons.perform_genotyping(log_q_ploidy_jk[j, :])
+
+            # generate sample ploidy metadata
+            sample_ploidy_metadata = SamplePloidyMetadata(
+                sample_name, ploidy_j, ploidy_genotyping_quality_j, self.ploidy_workspace.targets_metadata.contig_list)
+
+            # generate sample read depth metadata
+            sample_read_depth_metadata = SampleReadDepthMetadata.generate_sample_read_depth_metadata(
+                self.ploidy_workspace.sample_metadata_collection.get_sample_coverage_metadata(sample_name),
+                sample_ploidy_metadata,
+                self.ploidy_workspace.targets_metadata)
+
+            # export contig ploidy
+            self._export_sample_contig_ploidy(
+                sample_posterior_path, sample_ploidy_metadata, extra_comment_lines=sample_name_comment_line)
+
+            # export contig ploidy GQ
+            self._export_sample_contig_ploidy_gq(
+                sample_posterior_path, sample_ploidy_metadata, extra_comment_lines=sample_name_comment_line)
+
+            # export read depth
+            self._export_sample_read_depth(
+                sample_posterior_path, sample_read_depth_metadata, extra_comment_lines=sample_name_comment_line)
+
+            # export sample-specific posteriors in the approximation
+            _export_sample_specific_posteriors(si, sample_posterior_path,
+                                               self._approx_var_set, self._approx_mu_map, self._approx_std_map,
+                                               self._model_sample_specific_var_export_recipes,
+                                               sample_name_comment_line)
+
+
+# todo
+class PloidyModelImporter:
+    """ Reads ploidy model parameters from disk and updates the provided approximation accordingly """
+    def __init__(self,
+                 ploidy_config: PloidyModelConfig,
+                 ploidy_workspace: PloidyWorkspace,
+                 ploidy_model: PloidyModel,
+                 ploidy_model_approx: pm.MeanField,
+                 input_path: str):
+        self.ploidy_config = ploidy_config
+        self.ploidy_workspace = ploidy_workspace
+        self.ploidy_model = ploidy_model
+        self.ploidy_model_approx = ploidy_model_approx
+        self.input_path = input_path
+
+    def __call__(self):
+        pass

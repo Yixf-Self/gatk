@@ -91,7 +91,7 @@ class CopyNumberEmissionSampler(Sampler):
         return self.shared_workspace.log_copy_number_emission_stc.get_value(borrow=True)
 
 
-class CaseSampleCallingTask(HybridInferenceTask):
+class CaseSampleDenoisingCallingTask(HybridInferenceTask):
     def __init__(self,
                  denoising_config: DenoisingModelConfig,
                  calling_config: CopyNumberCallingConfig,
@@ -134,7 +134,6 @@ class CaseSampleCallingTask(HybridInferenceTask):
         DenoisingModelImporter(denoising_config, calling_config, shared_workspace, denoising_model,
                                self.continuous_model_approx, input_model_path)()
 
-    # todo
     def disengage(self):
         pass
 

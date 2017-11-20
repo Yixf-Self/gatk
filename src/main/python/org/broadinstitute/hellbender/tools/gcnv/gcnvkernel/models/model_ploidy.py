@@ -41,6 +41,7 @@ class PloidyModelConfig:
         self.contig_ploidy_prior_map, self.num_ploidy_states = self._get_validated_contig_ploidy_prior_map(
             contig_ploidy_prior_map)
         self.contig_set = set(contig_ploidy_prior_map.keys())
+        self.unordered_contig_list = list(self.contig_set)
 
     @staticmethod
     def _get_validated_contig_ploidy_prior_map(given_contig_ploidy_prior_map: Dict[str, np.ndarray],

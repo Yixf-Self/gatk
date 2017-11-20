@@ -96,27 +96,5 @@ class PloidyInferenceTask(HybridInferenceTask):
         self.ploidy_config = ploidy_config
         self.ploidy_workspace = ploidy_workspace
 
-    # todo warn if ploidy genotyping quality is low
-    # todo warn if ploidy genotyping is incompatible with a given list of sex genotypes
     def disengage(self):
-        log_q_ploidy_sjk = self.ploidy_workspace.log_q_ploidy_sjk.get_value(borrow=True)
-
-        for si, sample_name in enumerate(self.ploidy_workspace.sample_names):
-            ploidy_j = np.zeros((self.ploidy_workspace.num_contigs,), dtype=types.small_uint)
-            ploidy_genotyping_quality_j = np.zeros((self.ploidy_workspace.num_contigs,), dtype=types.floatX)
-            for j in range(self.ploidy_workspace.num_contigs):
-                ploidy_j[j], ploidy_genotyping_quality_j[j] = commons.perform_genotyping(log_q_ploidy_sjk[si, j, :])
-
-            # generate sample ploidy metadata
-            sample_ploidy_metadata = metadata.SamplePloidyMetadata(
-                sample_name, ploidy_j, ploidy_genotyping_quality_j, self.ploidy_workspace.targets_metadata.contig_list)
-
-            # generate sample read depth metadata
-            sample_read_depth_metadata = metadata.SampleReadDepthMetadata.generate_sample_read_depth_metadata(
-                self.ploidy_workspace.sample_metadata_collection.get_sample_coverage_metadata(sample_name),
-                sample_ploidy_metadata,
-                self.ploidy_workspace.targets_metadata)
-
-            # add to the collection
-            self.ploidy_workspace.sample_metadata_collection.add_sample_ploidy_metadata(sample_ploidy_metadata)
-            self.ploidy_workspace.sample_metadata_collection.add_sample_read_depth_metadata(sample_read_depth_metadata)
+        pass
