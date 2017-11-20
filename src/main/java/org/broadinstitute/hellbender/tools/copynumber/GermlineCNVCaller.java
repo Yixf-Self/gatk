@@ -205,23 +205,31 @@ public final class GermlineCNVCaller extends GATKTool {
             }
         }
 
-        Utils.validateArg(inputReadCountFiles.size() == new HashSet<>(inputReadCountFiles).size(),
-                "List of input read-count files cannot contain duplicates.");
         inputReadCountFiles.forEach(IOUtils::canReadFile);
 
-        CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection(intervalArgumentCollection);
         final SAMSequenceDictionary sequenceDictionary = getBestAvailableSequenceDictionary();
+        CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection(intervalArgumentCollection);
         intervals = hasIntervals()
                 ? new LinkedHashSet<>(intervalArgumentCollection.getIntervals(sequenceDictionary))
                 : getIntervalsFromFirstReadCountFile();
 
         if (inputAnnotatedIntervalsFile != null) {
             IOUtils.canReadFile(inputAnnotatedIntervalsFile);
-            if (mode == Mode.CASE) {
-                logger.warn("Running in case mode, but an annotated-intervals file was provided; it will be ignored...");
-            } else {
+        }
+
+        if (mode == Mode.COHORT) {
+            Utils.validateArg(inputReadCountFiles.size() == new HashSet<>(inputReadCountFiles).size(),
+                    "List of input read-count files cannot contain duplicates.");
+            if (inputAnnotatedIntervalsFile != null) {
                 Utils.validateArg(new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile).getIntervals().containsAll(intervals),
                         "Annotated-intervals file does not contain all specified intervals.");
+            }
+        } else if (mode == Mode.CASE) {
+            if (hasIntervals()) {
+                logger.warn("Running in case mode, but intervals were provided; they will be ignored...");
+            }
+            if (inputAnnotatedIntervalsFile != null) {
+                logger.warn("Running in case mode, but an annotated-intervals file was provided; it will be ignored...");
             }
         }
 
