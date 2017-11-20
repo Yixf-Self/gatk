@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
- * Integration tests for {@link GermlineCNVCaller}
+ * Integration tests for {@link GermlineCNVCallerSpark}
  *
  * TODO github/gatk-protected issue #803 test case-sample calling on rearranged targets
  * TODO github/gatk-protected issue #803 test concordance on parameter estimation
@@ -45,7 +45,7 @@ import java.util.stream.IntStream;
  *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
-public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
+public class GermlineCNVCallerSparkIntegrationTest extends CommandLineProgramTest {
     private static final String TEST_SUB_DIR = publicTestDir + "org/broadinstitute/hellbender/tools/coveragemodel";
     private static final File TEST_CONTIG_PLOIDY_ANNOTATIONS_FILE = new File(TEST_SUB_DIR,
             "sim_contig_anots.tsv");
@@ -91,11 +91,11 @@ public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
     private static final File CALLING_OUTPUT_PATH = createTempDir("coverage_modeller_germline_calling_output");
 
     private static final File LEARNING_MODEL_OUTPUT_PATH = new File(LEARNING_OUTPUT_PATH,
-            GermlineCNVCaller.FINAL_MODEL_SUBDIR);
+            GermlineCNVCallerSpark.FINAL_MODEL_SUBDIR);
     private static final File LEARNING_POSTERIORS_OUTPUT_PATH = new File(LEARNING_OUTPUT_PATH,
-            GermlineCNVCaller.FINAL_POSTERIORS_SUBDIR);
+            GermlineCNVCallerSpark.FINAL_POSTERIORS_SUBDIR);
     private static final File CALLING_POSTERIORS_OUTPUT_PATH = new File(CALLING_OUTPUT_PATH,
-            GermlineCNVCaller.FINAL_POSTERIORS_SUBDIR);
+            GermlineCNVCallerSpark.FINAL_POSTERIORS_SUBDIR);
 
     /* for Spark tests */
     private static final int SPARK_NUMBER_OF_PARTITIONS = 7;
@@ -122,9 +122,9 @@ public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
                     CHECKPOINTING_PATH.getAbsolutePath(),
                 "--" + CoverageModelArgumentCollection.NUMBER_OF_TARGET_SPACE_PARTITIONS_LONG_NAME,
                     String.valueOf(SPARK_NUMBER_OF_PARTITIONS),
-                "--" + GermlineCNVCaller.COPY_NUMBER_TRANSITION_PRIOR_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.COPY_NUMBER_TRANSITION_PRIOR_TABLE_LONG_NAME,
                     TEST_HMM_PRIORS_TABLE_FILE.getAbsolutePath(),
-                "--" + GermlineCNVCaller.CONTIG_PLOIDY_ANNOTATIONS_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.CONTIG_PLOIDY_ANNOTATIONS_TABLE_LONG_NAME,
                     TEST_CONTIG_PLOIDY_ANNOTATIONS_FILE.getAbsolutePath(),
                 "--" + CoverageModelArgumentCollection.RDD_CHECKPOINTING_PATH_LONG_NAME,
                     SPARK_CHECKPOINTING_PATH.getAbsolutePath(),
@@ -137,13 +137,13 @@ public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
 
     private String[] getLearningArgs(final String... extraArgs) {
         return ArrayUtils.addAll(new String[] {
-                "--" + GermlineCNVCaller.JOB_TYPE_LONG_NAME,
-                    GermlineCNVCaller.JobType.LEARN_AND_CALL.name(),
-                "--" + GermlineCNVCaller.INPUT_READ_COUNTS_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.JOB_TYPE_LONG_NAME,
+                    GermlineCNVCallerSpark.JobType.LEARN_AND_CALL.name(),
+                "--" + GermlineCNVCallerSpark.INPUT_READ_COUNTS_TABLE_LONG_NAME,
                     TEST_LEARNING_COMBINED_RAW_READ_COUNTS_FILE.getAbsolutePath(),
-                "--" + GermlineCNVCaller.SAMPLE_SEX_GENOTYPE_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.SAMPLE_SEX_GENOTYPE_TABLE_LONG_NAME,
                     TEST_LEARNING_SAMPLE_SEX_GENOTYPES_FILE.getAbsolutePath(),
-                "--" + GermlineCNVCaller.OUTPUT_PATH_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.OUTPUT_PATH_LONG_NAME,
                     LEARNING_OUTPUT_PATH.getAbsolutePath(),
                 "--" + CoverageModelArgumentCollection.MAX_EM_ITERATIONS_LONG_NAME,
                     String.valueOf(MAX_LEARNING_EM_ITERATIONS),
@@ -168,13 +168,13 @@ public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
 
     private String[] getCallingOnLearnedModelArgs(final String... extraArgs) {
         return ArrayUtils.addAll(new String[] {
-                "--" + GermlineCNVCaller.JOB_TYPE_LONG_NAME,
-                    GermlineCNVCaller.JobType.CALL_ONLY.name(),
-                "--" + GermlineCNVCaller.INPUT_READ_COUNTS_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.JOB_TYPE_LONG_NAME,
+                    GermlineCNVCallerSpark.JobType.CALL_ONLY.name(),
+                "--" + GermlineCNVCallerSpark.INPUT_READ_COUNTS_TABLE_LONG_NAME,
                     TEST_CALLING_COMBINED_RAW_READ_COUNTS_FILE.getAbsolutePath(),
-                "--" + GermlineCNVCaller.SAMPLE_SEX_GENOTYPE_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.SAMPLE_SEX_GENOTYPE_TABLE_LONG_NAME,
                     TEST_CALLING_SAMPLE_SEX_GENOTYPES_FILE.getAbsolutePath(),
-                "--" + GermlineCNVCaller.OUTPUT_PATH_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.OUTPUT_PATH_LONG_NAME,
                     CALLING_OUTPUT_PATH.getAbsolutePath(),
                 "--" + CoverageModelArgumentCollection.MAX_EM_ITERATIONS_LONG_NAME,
                     String.valueOf(MAX_CALLING_EM_ITERATIONS),
@@ -195,13 +195,13 @@ public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
 
     private String[] getCallingOnExactModelArgs(final String... extraArgs) {
         return ArrayUtils.addAll(new String[] {
-                "--" + GermlineCNVCaller.JOB_TYPE_LONG_NAME,
-                    GermlineCNVCaller.JobType.CALL_ONLY.name(),
-                "--" + GermlineCNVCaller.INPUT_READ_COUNTS_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.JOB_TYPE_LONG_NAME,
+                    GermlineCNVCallerSpark.JobType.CALL_ONLY.name(),
+                "--" + GermlineCNVCallerSpark.INPUT_READ_COUNTS_TABLE_LONG_NAME,
                     TEST_CALLING_COMBINED_RAW_READ_COUNTS_FILE.getAbsolutePath(),
-                "--" + GermlineCNVCaller.SAMPLE_SEX_GENOTYPE_TABLE_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.SAMPLE_SEX_GENOTYPE_TABLE_LONG_NAME,
                     TEST_CALLING_SAMPLE_SEX_GENOTYPES_FILE.getAbsolutePath(),
-                "--" + GermlineCNVCaller.OUTPUT_PATH_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.OUTPUT_PATH_LONG_NAME,
                     CALLING_OUTPUT_PATH.getAbsolutePath(),
                 "--" + CoverageModelArgumentCollection.MAX_EM_ITERATIONS_LONG_NAME,
                    String.valueOf(MAX_CALLING_EM_ITERATIONS),
@@ -232,7 +232,7 @@ public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
 
     private void runCaseSampleCallingTestOnExactModelParams(final String... extraArgs) {
         runCommandLine(getCallingOnExactModelArgs(ArrayUtils.addAll(new String[] {
-                "--" + GermlineCNVCaller.INPUT_MODEL_PATH_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.INPUT_MODEL_PATH_LONG_NAME,
                 TEST_TRUTH_SIM_MODEL.getAbsolutePath() }, extraArgs)));
 
         final List<Target> callingTargets = TargetTableReader.readTargetFile(new File(CALLING_POSTERIORS_OUTPUT_PATH,
@@ -244,7 +244,7 @@ public class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
 
     private void runCaseSampleCallingTestOnLearnedModelParams(final String... extraArgs) {
         runCommandLine(getCallingOnLearnedModelArgs(ArrayUtils.addAll(new String[] {
-                "--" + GermlineCNVCaller.INPUT_MODEL_PATH_LONG_NAME,
+                "--" + GermlineCNVCallerSpark.INPUT_MODEL_PATH_LONG_NAME,
                 LEARNING_MODEL_OUTPUT_PATH.getAbsolutePath()}, extraArgs)));
 
         final List<Target> callingTargets = TargetTableReader.readTargetFile(new File(CALLING_POSTERIORS_OUTPUT_PATH,

@@ -13,15 +13,15 @@ import java.io.File;
 import static org.testng.Assert.*;
 
 /**
- * Created by slee on 11/18/17.
+ * Created by slee on 11/20/17.
  */
-public final class DetermineGermlineContigPloidyIntegrationTest extends CommandLineProgramTest {
+public final class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
     @Test
     public void test() {
         LoggingUtils.setLoggingLevel(Log.LogLevel.INFO);
         final String path = "/home/slee/working/gatk/";
         final ArgumentsBuilder argsBuilder = new ArgumentsBuilder()
-                .addFileArgument(DetermineGermlineContigPloidy.CONTIG_PLOIDY_PRIORS_FILE_LONG_NAME, new File(path, "contig_ploidy_prior.tsv"))
+                .addArgument("L", new File(path, "agilent.21-22-X-Y.interval_list").getAbsolutePath())
                 .addInput(new File(path, "TCGA-02-2483-10A-01D-1494-08.counts.hdf5"))
                 .addInput(new File(path, "TCGA-02-2485-10A-01D-1494-08.counts.hdf5"))
                 .addInput(new File(path, "TCGA-05-4244-10A-01D-1105-08.counts.hdf5"))
@@ -34,7 +34,6 @@ public final class DetermineGermlineContigPloidyIntegrationTest extends CommandL
                 .addInput(new File(path, "TCGA-05-4395-10A-01D-1265-08.counts.hdf5"))
                 .addArgument(StandardArgumentDefinitions.OUTPUT_LONG_NAME, path)
                 .addArgument(CopyNumberStandardArgument.OUTPUT_PREFIX_LONG_NAME, "test");
-        System.out.println(argsBuilder.toString());
         runCommandLine(argsBuilder);
     }
 }

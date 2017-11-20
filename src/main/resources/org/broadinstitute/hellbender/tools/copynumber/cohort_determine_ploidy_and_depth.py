@@ -75,23 +75,17 @@ group.add_argument("--contig_ploidy_prior_table",
                    default=argparse.SUPPRESS,
                    help="Contig ploidy prior probabilities (in .tsv format)")
 
-group.add_argument("--output_contig_ploidy",
-                   type=str,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="Output path to write samples contig ploidy table")
-
-group.add_argument("--output_read_depth",
-                   type=str,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="Output path to write sample read depth table")
-
-group.add_argument("--output_ploidy_model_path",
+group.add_argument("--output_model_path",
                    type=str,
                    required=True,
                    default=argparse.SUPPRESS,
                    help="Output path to write the ploidy model for future single-sample ploidy determination use")
+
+group.add_argument("--output_calls_path",
+                   type=str,
+                   required=True,
+                   default=argparse.SUPPRESS,
+                   help="Output path to write posteriors")
 
 # optional arguments
 gcnvkernel.PloidyModelConfig.expose_args(parser)
@@ -109,6 +103,7 @@ gcnvkernel.HybridInferenceParameters.expose_args(
         "--max_advi_iter_subsequent_epochs": 1000,
         "--convergence_snr_averaging_window": 5000,
         "--convergence_snr_countdown_window": 100,
+        "--num_thermal_epochs": 10,
         "--max_calling_iters": 1,
         "--caller_update_convergence_threshold": 1e-3
     },
@@ -164,11 +159,12 @@ if __name__ == "__main__":
     ploidy_task.engage()
     ploidy_task.disengage()
 
-    # save results
-    sample_metadata_collection.write_sample_read_depth_metadata(sample_names, args.output_read_depth)
-    sample_metadata_collection.write_sample_contig_ploidy_metadata(sample_names, args.output_contig_ploidy)
-
     # save model parameters
     gcnvkernel.io.PloidyModelExporter(ploidy_config, ploidy_workspace,
                                       ploidy_task.continuous_model, ploidy_task.continuous_model_approx,
-                                      args.output_ploidy_model_path)()
+                                      args.output_model_path)()
+
+    # sample sample-specific posteriors
+    gcnvkernel.io.SamplePloidyExporter(ploidy_config, ploidy_workspace,
+                                       ploidy_task.continuous_model, ploidy_task.continuous_model_approx,
+                                       args.output_calls_path)()

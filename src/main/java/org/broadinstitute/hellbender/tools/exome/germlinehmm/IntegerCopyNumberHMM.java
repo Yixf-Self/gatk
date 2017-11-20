@@ -1,6 +1,6 @@
 package org.broadinstitute.hellbender.tools.exome.germlinehmm;
 
-import org.broadinstitute.hellbender.tools.coveragemodel.germline.GermlineCNVCaller;
+import org.broadinstitute.hellbender.tools.coveragemodel.germline.GermlineCNVCallerSpark;
 import org.broadinstitute.hellbender.tools.coveragemodel.germline.IntegerCopyNumberExpectationsCalculator;
 import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.TargetLikelihoodCalculator;
 import org.broadinstitute.hellbender.tools.exome.Target;
@@ -18,7 +18,7 @@ import java.util.stream.IntStream;
  * This class represents a hidden Markov model with integer copy number states as its hidden states.
  *
  * It is used for inferring germline copy number variation from coverage data.
- * See {@link IntegerCopyNumberExpectationsCalculator} and {@link GermlineCNVCaller}.
+ * See {@link IntegerCopyNumberExpectationsCalculator} and {@link GermlineCNVCallerSpark}.
  *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */

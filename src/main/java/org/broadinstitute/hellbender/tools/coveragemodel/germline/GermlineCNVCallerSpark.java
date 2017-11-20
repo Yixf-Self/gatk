@@ -71,7 +71,7 @@ import java.util.Map;
  *
  * <p>To make CNV calls and simultaneously create a Panel of Normals (PoN), use --jobType LEARN_AND_CALL:</p>
  * <pre>
- * gatk-launch --javaOptions "-Xmx16g" GermlineCNVCaller \
+ * gatk-launch --javaOptions "-Xmx16g" GermlineCNVCallerSpark \
  *   --jobType LEARN_AND_CALL \
  *   --input combined_read_counts.tsv \
  *   --contigAnnotationsTable grch37_contig_annotations.tsv \
@@ -89,7 +89,7 @@ import java.util.Map;
  * <p>To make CNV calls using a Panel of Normals (PoN), use --jobType CALL_ONLY:</p>
  *
  * <pre>
- * gatk-launch --javaOptions "-Xmx4g" GermlineCNVCaller \
+ * gatk-launch --javaOptions "-Xmx4g" GermlineCNVCallerSpark \
  *   --jobType CALL_ONLY \
  *   --input combined_read_counts.tsv \
  *   --inputModelPath learn_and_call_results/model_final \
@@ -115,7 +115,7 @@ import java.util.Map;
 )
 @DocumentedFeature
 @BetaFeature
-public final class GermlineCNVCaller extends SparkToggleCommandLineProgram {
+public final class GermlineCNVCallerSpark extends SparkToggleCommandLineProgram {
 
     private static final long serialVersionUID = -1149969750485027900L;
 
@@ -131,7 +131,7 @@ public final class GermlineCNVCaller extends SparkToggleCommandLineProgram {
         CALL_ONLY
     }
 
-    private static final Logger logger = LogManager.getLogger(GermlineCNVCaller.class);
+    private static final Logger logger = LogManager.getLogger(GermlineCNVCallerSpark.class);
 
     public static final String FINAL_MODEL_SUBDIR = "model_final";
     public static final String FINAL_POSTERIORS_SUBDIR = "posteriors_final";

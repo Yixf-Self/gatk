@@ -8,6 +8,8 @@ import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
 import org.broadinstitute.hellbender.cmdline.CommandLineProgram;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
+import org.broadinstitute.hellbender.cmdline.argumentcollections.IntervalArgumentCollection;
+import org.broadinstitute.hellbender.cmdline.argumentcollections.RequiredIntervalArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGroup;
 import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.exceptions.UserException;
@@ -89,11 +91,11 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
 
     private static final String DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT = "cohort_determine_ploidy_and_depth.py";
 
+    public static final String MODEL_PATH_SUFFIX = "-model";
+    public static final String CALLS_PATH_SUFFIX = "-calls";
+
     public static final String CONTIG_PLOIDY_PRIORS_FILE_LONG_NAME = "contigPloidyPriors";
     public static final String CONTIG_PLOIDY_PRIORS_FILE_SHORT_NAME = "priors";
-
-    public static final String READ_DEPTH_TABLE_FILE_SUFFIX = ".readDepth.tsv";
-    public static final String CONTIG_PLOIDY_TABLE_FILE_SUFFIX = ".contigPloidy.tsv";
 
     @Argument(
             doc = "Input read-count files containing integer read counts in genomic intervals for all samples.  " +
@@ -147,7 +149,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
 
         //read in count files and output intervals and sample x coverage-per-contig metadata table to temporary files
         final File sampleCoverageMetadataFile = IOUtils.createTempFile("sample-coverage-metadata", ".tsv");
-        final List<SimpleInterval> intervals = getIntervalsFromFirstReadCountFile(inputReadCountFiles);
+        final List<SimpleInterval> intervals = getIntervalsFromFirstReadCountFile();
         final File intervalsFile = IOUtils.createTempFile("intervals", ".tsv");
         new SimpleIntervalCollection(intervals).write(intervalsFile);
         writeSampleCoverageMetadata(sampleCoverageMetadataFile, intervals);
@@ -205,7 +207,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
 
     }
 
-    private List<SimpleInterval> getIntervalsFromFirstReadCountFile(final List<File> inputReadCountFiles) {
+    private List<SimpleInterval> getIntervalsFromFirstReadCountFile() {
         final File firstReadCountFile = inputReadCountFiles.get(0);
         logger.info(String.format("Retrieving intervals from first read-count file (%s)...", firstReadCountFile));
         final SimpleCountCollection readCounts = SimpleCountCollection.read(firstReadCountFile);
@@ -277,10 +279,10 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
                 "--interval_list=" + intervalsFile.getAbsolutePath(),
                 "--sample_coverage_metadata=" + sampleCoverageMetadataFile.getAbsolutePath(),
                 "--contig_ploidy_prior_table=" + inputContigPloidyPriorsFile.getAbsolutePath(),
-                "--output_contig_ploidy=" + outputDirArg + outputPrefix + CONTIG_PLOIDY_TABLE_FILE_SUFFIX,
-                "--output_read_depth=" + outputDirArg + outputPrefix + READ_DEPTH_TABLE_FILE_SUFFIX));
+                "--output_calls_path=" + outputDirArg + outputPrefix + CALLS_PATH_SUFFIX));
+
         if (mode == Mode.COHORT) {
-            arguments.add("--output_ploidy_model_path=" + outputDirArg + outputPrefix);
+            arguments.add("--output_model_path=" + outputDirArg + outputPrefix + MODEL_PATH_SUFFIX);
         } else if (mode == Mode.CASE)  {
             //TODO
         }
