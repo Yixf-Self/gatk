@@ -79,7 +79,7 @@ class CopyNumberEmissionSampler(Sampler):
     def reset(self):
         self.shared_workspace.log_copy_number_emission_stc.set_value(
             np.zeros((self.shared_workspace.num_samples,
-                      self.shared_workspace.num_targets,
+                      self.shared_workspace.num_intervals,
                       self.calling_config.num_copy_number_states),
                      dtype=types.floatX), borrow=config.borrow_numpy)
 
@@ -120,7 +120,7 @@ class CohortDenoisingAndCallingTask(HybridInferenceTask):
             copy_number_caller = HHMMClassAndCopyNumberCaller(
                 calling_config, hybrid_inference_params, shared_workspace, self.temperature)
 
-        elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_targets
+        elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_intervals
 
         super().__init__(hybrid_inference_params, denoising_model, copy_number_emission_sampler, copy_number_caller,
                          elbo_normalization_factor=elbo_normalization_factor,

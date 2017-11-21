@@ -78,7 +78,7 @@ class CopyNumberEmissionSampler(Sampler):
     def reset(self):
         self.shared_workspace.log_copy_number_emission_stc.set_value(
             np.zeros((self.shared_workspace.num_samples,
-                      self.shared_workspace.num_targets,
+                      self.shared_workspace.num_intervals,
                       self.calling_config.num_copy_number_states),
                      dtype=types.floatX), borrow=config.borrow_numpy)
 
@@ -120,7 +120,7 @@ class CaseDenoisingCallingTask(HybridInferenceTask):
             copy_number_caller = HMMCopyNumberCaller(
                 calling_config, hybrid_inference_params, shared_workspace, self.temperature)
 
-        elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_targets
+        elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_intervals
         opt = SampleSpecificAdamax(hybrid_inference_params.learning_rate,
                                    hybrid_inference_params.adamax_beta1,
                                    hybrid_inference_params.adamax_beta2)

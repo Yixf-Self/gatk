@@ -11,7 +11,7 @@ import scipy.sparse as sp
 import theano as th
 import theano.sparse as tst
 import theano.tensor as tt
-from pymc3 import Normal, Deterministic, DensityDist, Lognormal, Uniform, Exponential
+from pymc3 import Normal, Deterministic, DensityDist, Lognormal, Exponential
 
 from ..tasks.inference_task_base import HybridInferenceParameters, GeneralizedContinuousModel
 from . import commons
@@ -19,8 +19,6 @@ from .dists import HalfFlat
 from .theano_hmm import TheanoForwardBackward
 from .. import config, types
 from ..structs.interval import Interval, GCContentAnnotation
-
-# import pathos.multiprocessing as mp
 
 _logger = logging.getLogger(__name__)
 
@@ -47,7 +45,7 @@ class DenoisingModelConfig:
         """ Constructor
         :param max_bias_factors: maximum number of bias factors
         :param mapping_error_rate: typical mapping error rate
-        :param psi_t_scale: scale of target-specific unexplained variance
+        :param psi_t_scale: scale of interval-specific unexplained variance
         :param psi_s_scale: scale of sample-specific unexplained variance
         :param depth_correction_tau: precision for pinning the read depth for each denoising task to its global value
         :param log_mean_bias_std: standard deviation of the log mean bias
@@ -100,7 +98,7 @@ class DenoisingModelConfig:
 
         process_and_maybe_add("psi_t_scale",
                               type=float,
-                              help="Typical scale of target-specific unexplained variance")
+                              help="Typical scale of interval-specific unexplained variance")
 
         process_and_maybe_add("psi_s_scale",
                               type=float,
@@ -116,7 +114,7 @@ class DenoisingModelConfig:
 
         process_and_maybe_add("init_ard_rel_unexplained_variance",
                               type=float,
-                              help="Initial value of ARD prior precision relative to the typical target-specific "
+                              help="Initial value of ARD prior precision relative to the typical interval-specific "
                                    "unexplained variance scale")
 
         process_and_maybe_add("num_gc_bins",
@@ -164,12 +162,12 @@ class CopyNumberCallingConfig:
                  num_calling_processes: int = 1):
         """
         :param p_alt: prior probability of assigning an alt copy number (with respect to the contig baseline copy
-                      number) for an arbitrary target
-        :param p_flat: prior probability of assigning a flat copy number prior to a target
+                      number) for an arbitrary interval
+        :param p_flat: prior probability of assigning a flat copy number prior to an interval
         :param cnv_coherence_length: coherence length of copy number states (in bp units)
-        :param class_coherence_length: coherence length of target class (ref, flat) states (in bp units)
+        :param class_coherence_length: coherence length of interval class (ref, flat) states (in bp units)
         :param max_copy_number: maximum allowed copy number
-        :param initialize_to_flat_class: initialize to flat class on all targets
+        :param initialize_to_flat_class: initialize to flat class on all intervals
         """
         assert 0.0 <= p_alt <= 1.0
         assert 0.0 <= p_flat <= 1.0
@@ -260,20 +258,20 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
         # class log posterior probs
         if calling_config.initialize_to_flat_class:
             log_q_tau_tk = (-np.log(calling_config.num_copy_number_classes - 1)
-                            * np.ones((shared_workspace.num_targets, calling_config.num_copy_number_classes),
+                            * np.ones((shared_workspace.num_intervals, calling_config.num_copy_number_classes),
                                       dtype=types.floatX))
             log_q_tau_tk[:, 0] = -np.inf
         else:
             log_q_tau_tk = np.tile(np.log(shared_workspace.class_probs_k.get_value(borrow=True)),
-                                   (shared_workspace.num_targets, 1))
+                                   (shared_workspace.num_intervals, 1))
         shared_workspace.log_q_tau_tk = th.shared(log_q_tau_tk, name="log_q_tau_tk", borrow=config.borrow_numpy)
 
         # copy number log posterior probs
-        log_q_c_stc = np.zeros((shared_workspace.num_samples, shared_workspace.num_targets,
+        log_q_c_stc = np.zeros((shared_workspace.num_samples, shared_workspace.num_intervals,
                                 calling_config.num_copy_number_states), dtype=types.floatX)
 
         # auxiliary variables
-        c_map_st = np.zeros((shared_workspace.num_samples, shared_workspace.num_targets), dtype=np.int)
+        c_map_st = np.zeros((shared_workspace.num_samples, shared_workspace.num_intervals), dtype=np.int)
 
         log_p_alt = np.log(calling_config.p_alt)
         log_p_baseline = np.log(1.0 - calling_config.max_copy_number * calling_config.p_alt)
@@ -293,7 +291,7 @@ class DenoisingCallingWorkspace:
     def __init__(self,
                  denoising_config: DenoisingModelConfig,
                  calling_config: CopyNumberCallingConfig,
-                 targets_interval_list: List[Interval],
+                 interval_list: List[Interval],
                  n_st: np.ndarray,
                  baseline_copy_number_s: np.ndarray,
                  global_read_depth_s: np.ndarray,
@@ -304,14 +302,14 @@ class DenoisingCallingWorkspace:
             - sample names in sample_metadata_collection must match those in sample_names
 
         """
-        assert n_st.ndim == 2, "read counts matrix must be a dim=2 ndarray with shape (num_samples, num_targets)"
+        assert n_st.ndim == 2, "read counts matrix must be a dim=2 ndarray with shape (num_samples, num_intervals)"
 
         self.num_samples: int = n_st.shape[0]
-        self.num_targets: int = n_st.shape[1]
+        self.num_intervals: int = n_st.shape[1]
 
-        assert len(targets_interval_list) == self.num_targets,\
-            "the length of the targets interval list is incompatible with the shape of the read counts matrix"
-        self.targets_interval_list = targets_interval_list
+        assert len(interval_list) == self.num_intervals,\
+            "the length of the interval list is incompatible with the shape of the read counts matrix"
+        self.interval_list = interval_list
 
         assert baseline_copy_number_s.ndim == 1, "TODO informative message"
         assert baseline_copy_number_s.size == self.num_samples, "TODO informative message"
@@ -328,10 +326,10 @@ class DenoisingCallingWorkspace:
         self.n_st: types.TensorSharedVariable = th.shared(
             n_st.astype(types.floatX), name="n_st", borrow=config.borrow_numpy)
 
-        # distance between subsequent targets
+        # distance between subsequent intervals
         self.dist_t: types.TensorSharedVariable = th.shared(
-            np.asarray([self.targets_interval_list[ti + 1].distance(self.targets_interval_list[ti])
-                        for ti in range(self.num_targets - 1)], dtype=types.floatX),
+            np.asarray([self.interval_list[ti + 1].distance(self.interval_list[ti])
+                        for ti in range(self.num_intervals - 1)], dtype=types.floatX),
             borrow=config.borrow_numpy)
 
         # copy number values for each copy number state
@@ -350,7 +348,7 @@ class DenoisingCallingWorkspace:
         # copy number emission log posterior
         #   updated by LogEmissionPosteriorSampler.update_log_copy_number_emission_posterior()
         log_copy_number_emission_stc = np.zeros(
-            (self.num_samples, self.num_targets, calling_config.num_copy_number_states), dtype=types.floatX)
+            (self.num_samples, self.num_intervals, calling_config.num_copy_number_states), dtype=types.floatX)
         self.log_copy_number_emission_stc: types.TensorSharedVariable = th.shared(
             log_copy_number_emission_stc, name="log_copy_number_emission_stc", borrow=config.borrow_numpy)
 
@@ -362,7 +360,7 @@ class DenoisingCallingWorkspace:
         # class emission log posterior
         #   updated by HHMMClassAndCopyNumberCaller.update_log_class_emission_tk()
         log_class_emission_tk = np.zeros(
-            (self.num_targets, calling_config.num_copy_number_classes), dtype=types.floatX)
+            (self.num_intervals, calling_config.num_copy_number_classes), dtype=types.floatX)
         self.log_class_emission_tk: types.TensorSharedVariable = th.shared(
             log_class_emission_tk, name="log_class_emission_tk", borrow=True)
 
@@ -390,7 +388,7 @@ class DenoisingCallingWorkspace:
         self.W_gc_tg: tst.SparseConstant = None
         if denoising_config.enable_explicit_gc_bias_modeling:
             self.W_gc_tg = self._create_sparse_gc_bin_tensor_tg(
-                self.targets_interval_list, denoising_config.num_gc_bins)
+                self.interval_list, denoising_config.num_gc_bins)
 
         # initialize posterior
         posterior_initializer.initialize_posterior(denoising_config, calling_config, self)
@@ -409,23 +407,23 @@ class DenoisingCallingWorkspace:
         return np.log(trans_tkl)
 
     @staticmethod
-    def _create_sparse_gc_bin_tensor_tg(targets_interval_list: List[Interval], num_gc_bins: int) -> tst.SparseConstant:
-        """ Creates a sparse 2d theano tensor with shape (num_targets, gc_bin). The sparse tensor represents a
-        1-hot mapping of each target to its GC bin index. The range [0, 1] is uniformly divided into num_gc_bins.
+    def _create_sparse_gc_bin_tensor_tg(interval_list: List[Interval], num_gc_bins: int) -> tst.SparseConstant:
+        """ Creates a sparse 2d theano tensor with shape (num_intervals, gc_bin). The sparse tensor represents a
+        1-hot mapping of each interval to its GC bin index. The range [0, 1] is uniformly divided into num_gc_bins.
         """
-        assert all([GCContentAnnotation.get_key() in interval.annotations.keys()
-                    for interval in targets_interval_list]), "explicit GC bias modeling is enabled, however, " \
-                                                             "some or all targets lack the GC_CONTENT annotation."
+        assert all([GCContentAnnotation.get_key() in interval.annotations.keys() for interval in interval_list]),\
+            "explicit GC bias modeling is enabled, however, some or all intervals lack \"{0}\" annotation; " \
+            "cannot continue".format(GCContentAnnotation.get_key())
 
         def get_gc_bin_idx(gc_content):
             return min(int(gc_content * num_gc_bins), num_gc_bins - 1)
 
-        num_targets = len(targets_interval_list)
-        data = np.ones((num_targets,))
+        num_intervals = len(interval_list)
+        data = np.ones((num_intervals,))
         indices = [get_gc_bin_idx(interval.get_annotation(GCContentAnnotation.get_key()))
-                   for interval in targets_interval_list]
-        indptr = np.arange(0, num_targets + 1)
-        scipy_gc_matrix = sp.csr_matrix((data, indices, indptr), shape=(num_targets, num_gc_bins),
+                   for interval in interval_list]
+        indptr = np.arange(0, num_intervals + 1)
+        scipy_gc_matrix = sp.csr_matrix((data, indices, indptr), shape=(num_intervals, num_gc_bins),
                                         dtype=types.small_uint)
         theano_gc_matrix: tst.SparseConstant = tst.as_sparse(scipy_gc_matrix)
         return theano_gc_matrix
@@ -463,11 +461,11 @@ class DefaultInitialModelParametersSupplier(InitialModelParametersSupplier):
 
     def get_init_psi_t(self) -> np.ndarray:
         return self.denoising_model_config.psi_t_scale * np.ones(
-            (self.shared_workspace.num_targets,), dtype=types.floatX)
+            (self.shared_workspace.num_intervals,), dtype=types.floatX)
 
     # todo better initialization?
     def get_init_log_mean_bias_t(self) -> np.ndarray:
-        return np.zeros((self.shared_workspace.num_targets,), dtype=types.floatX)
+        return np.zeros((self.shared_workspace.num_intervals,), dtype=types.floatX)
 
     def get_init_ard_u(self) -> np.ndarray:
         fact = self.denoising_model_config.psi_t_scale * self.denoising_model_config.init_ard_rel_unexplained_variance
@@ -487,9 +485,9 @@ class DenoisingModel(GeneralizedContinuousModel):
 
         eps = denoising_model_config.mapping_error_rate
 
-        # target-specific unexplained variance
+        # interval-specific unexplained variance
         psi_t = Exponential(name='psi_t', lam=1.0 / denoising_model_config.psi_t_scale,
-                            shape=(shared_workspace.num_targets,),
+                            shape=(shared_workspace.num_intervals,),
                             broadcastable=(False,))
         register_as_global(psi_t)
 
@@ -502,9 +500,9 @@ class DenoisingModel(GeneralizedContinuousModel):
         # convert "unexplained variance" to negative binomial over-dispersion
         alpha_st = tt.inv((tt.exp(psi_t.dimshuffle('x', 0) + psi_s.dimshuffle(0, 'x')) - 1.0))
 
-        # target-specific mean log bias
+        # interval-specific mean log bias
         log_mean_bias_t = Normal(name='log_mean_bias_t', mu=0.0, sd=denoising_model_config.log_mean_bias_std,
-                                 shape=(shared_workspace.num_targets,),
+                                 shape=(shared_workspace.num_intervals,),
                                  broadcastable=(False,),
                                  testval=test_value_supplier.get_init_log_mean_bias_t())
         register_as_global(log_mean_bias_t)
@@ -533,7 +531,7 @@ class DenoisingModel(GeneralizedContinuousModel):
 
             # bias factors
             W_tu = Normal(name='W_tu', mu=0.0, tau=ard_u.dimshuffle('x', 0),
-                          shape=(shared_workspace.num_targets, denoising_model_config.max_bias_factors),
+                          shape=(shared_workspace.num_intervals, denoising_model_config.max_bias_factors),
                           broadcastable=(False, False))
             register_as_global(W_tu)
 
@@ -564,6 +562,7 @@ class DenoisingModel(GeneralizedContinuousModel):
         # useful expressions
         bias_st = tt.exp(log_bias_st)
 
+        # todo in principle, this term must be multiplied by the globally-average ploidy
         mean_mapping_error_correction_s: types.TheanoVector = eps * read_depth_s
 
         mu_stc = ((1.0 - eps) * read_depth_s.dimshuffle(0, 'x', 'x')
@@ -872,7 +871,7 @@ class HHMMClassAndCopyNumberBasicCaller:
 
         Note:
             In the following, we use "a" and "b" subscripts in the variable names to refer to the departure
-            and destination states, respectively. Like before, "t" and "k" denote target and class.
+            and destination states, respectively. Like before, "t" and "k" denote interval and class.
         """
         # shorthands
         pi_kc = tt.matrix('pi_kc')
@@ -881,9 +880,9 @@ class HHMMClassAndCopyNumberBasicCaller:
         cnv_coherence_length = self.calling_config.cnv_coherence_length
         num_copy_number_states = self.calling_config.num_copy_number_states
 
-        # log prior probability for the first target
-        log_prior_c_first_state = tt.dot(tt.log(pi_kc.T), tt.exp(log_q_tau_tk[0, :]))
-        log_prior_c_first_state -= pm.logsumexp(log_prior_c_first_state)
+        # log prior probability for the first interval
+        log_prior_c_first_interval = tt.dot(tt.log(pi_kc.T), tt.exp(log_q_tau_tk[0, :]))
+        log_prior_c_first_interval -= pm.logsumexp(log_prior_c_first_interval)
 
         # log transition matrix
         stay_t = tt.exp(-dist_t / cnv_coherence_length)  # todo can be cached in the workspace
@@ -896,7 +895,7 @@ class HHMMClassAndCopyNumberBasicCaller:
         log_trans_tab = tt.sum(q_tau_tkab * log_trans_tkab, axis=1)
         log_trans_tab -= pm.logsumexp(log_trans_tab, axis=2)
 
-        return th.function(inputs=[pi_kc], outputs=[log_prior_c_first_state, log_trans_tab])
+        return th.function(inputs=[pi_kc], outputs=[log_prior_c_first_interval, log_trans_tab])
 
     @th.configparser.change_flags(compute_test_value="off")
     def _get_update_log_class_emission_tk_theano_func(self):
@@ -905,7 +904,7 @@ class HHMMClassAndCopyNumberBasicCaller:
 
         Note:
 
-            xi_tab ~ posterior copy number probability of two subsequent targets
+            xi_tab ~ posterior copy number probability of two subsequent intervals
 
             correlations are ignored, i.e. we assume:
 
@@ -928,10 +927,10 @@ class HHMMClassAndCopyNumberBasicCaller:
         delta_ab = tt.eye(num_copy_number_states)
 
         # calculate log class emission by reducing over samples; see below
-        log_class_emission_cum_sum_tk = tt.zeros((self.shared_workspace.num_targets - 1,
+        log_class_emission_cum_sum_tk = tt.zeros((self.shared_workspace.num_intervals - 1,
                                                   self.calling_config.num_copy_number_classes), dtype=types.floatX)
 
-        def inc_log_class_emission_tk_except_for_first_target(pi_kc, q_c_tc, cum_sum_tk):
+        def inc_log_class_emission_tk_except_for_first_interval(pi_kc, q_c_tc, cum_sum_tk):
             """
             Adds the contribution of a given sample to the log class emission
             :param pi_kc: copy number prior inventory for the sample
@@ -948,16 +947,16 @@ class HHMMClassAndCopyNumberBasicCaller:
                 xi_tab.dimshuffle(0, 'x', 1, 2) * log_trans_tkab, axis=-1), axis=-1)
             return cum_sum_tk + current_log_class_emission_tk
 
-        reduce_output = th.reduce(inc_log_class_emission_tk_except_for_first_target,
+        reduce_output = th.reduce(inc_log_class_emission_tk_except_for_first_interval,
                                   sequences=[pi_skc, q_c_stc],
                                   outputs_info=[log_class_emission_cum_sum_tk])
-        log_class_emission_tk_except_for_first_target = reduce_output[0]
+        log_class_emission_tk_except_for_first_interval = reduce_output[0]
 
         log_class_emission_k_first = tt.sum(tt.sum(
             tt.log(pi_skc) * q_c_stc[:, 0, :].dimshuffle(0, 'x', 1), axis=0), axis=-1)
 
         log_class_emission_tk = tt.concatenate((log_class_emission_k_first.dimshuffle('x', 0),
-                                                log_class_emission_tk_except_for_first_target))
+                                                log_class_emission_tk_except_for_first_interval))
 
         return th.function(inputs=[], outputs=[], updates=[
             (self.shared_workspace.log_class_emission_tk, log_class_emission_tk)])

@@ -8,6 +8,7 @@ import argparse
 import gcnvkernel
 import shutil
 import json
+from typing import Dict, Any
 
 parser = argparse.ArgumentParser(description="gCNV case calling tool based on a previously trained model",
                                  formatter_class=gcnvkernel.cli_commons.GCNVHelpFormatter)
@@ -77,6 +78,50 @@ gcnvkernel.HybridInferenceParameters.expose_args(
         "--disable_caller"
     })
 
+
+def update_args_dict_from_exported_model(input_model_path: str,
+                                         _args_dict: Dict[str, Any]):
+
+    logging.info("Loading denoising model configuration from the provided model...")
+    with open(os.path.join(input_model_path, "denoising_config.json"), 'r') as fp:
+        imported_denoising_config_dict = json.load(fp)
+
+    # boolean flags
+    _args_dict['enable_bias_factors'] =\
+        imported_denoising_config_dict['enable_bias_factors']
+    _args_dict['enable_explicit_gc_bias_modeling'] =\
+        imported_denoising_config_dict['enable_explicit_gc_bias_modeling']
+    _args_dict['disable_bias_factors_in_flat_class'] =\
+        imported_denoising_config_dict['disable_bias_factors_in_flat_class']
+
+    # bias factor related
+    _args_dict['max_bias_factors'] =\
+        imported_denoising_config_dict['max_bias_factors']
+
+    # gc-related
+    _args_dict['num_gc_bins'] =\
+        imported_denoising_config_dict['num_gc_bins']
+    _args_dict['gc_curve_sd'] =\
+        imported_denoising_config_dict['gc_curve_sd']
+
+    logging.info("- bias factors enabled: "
+                 + repr(_args_dict['enable_bias_factors']))
+    logging.info("- explicit GC bias modeling enabled: "
+                 + repr(_args_dict['enable_explicit_gc_bias_modeling']))
+    logging.info("- bias factors in flat classes disabled: "
+                 + repr(_args_dict['disable_bias_factors_in_flat_class']))
+
+    if _args_dict['enable_bias_factors']:
+        logging.info("- maximum number of bias factors: "
+                     + repr(_args_dict['enable_bias_factors']))
+
+    if _args_dict['enable_explicit_gc_bias_modeling']:
+        logging.info("- number of GC curve knobs: "
+                     + repr(_args_dict['num_gc_bins']))
+        logging.info("- GC curve prior standard deviation: "
+                     + repr(_args_dict['gc_curve_sd']))
+
+
 if __name__ == "__main__":
 
     # parse arguments
@@ -111,7 +156,10 @@ if __name__ == "__main__":
             other_baseline_copy_number_s = sample_metadata_collection.get_sample_contig_ploidy_array(
                 contig, sample_names)
             assert all(baseline_copy_number_s == other_baseline_copy_number_s), \
-                "Contig ploidy of one of more samples is variable across targets; cannot continue."
+                "Contig ploidy of one of more samples varies across targets; " \
+                "This can occur if modeling intervals span more than one contig and " \
+                "the germline contig ploidy changes for one or more samples across the spanned " \
+                "contigs; cannot continue."
 
     # read depth array
     read_depth_s = sample_metadata_collection.get_sample_read_depth_array(sample_names)
@@ -119,27 +167,10 @@ if __name__ == "__main__":
     # setup the inference task
     args_dict = args.__dict__
 
-    # import denoising config
-    logging.info("Loading denoising model configuration from the provided model...")
-    with open(os.path.join(args.input_model_path, "denoising_config.json"), 'r') as fp:
-        imported_denoising_config_dict = json.load(fp)
-    args_dict['enable_bias_factors'] = imported_denoising_config_dict['enable_bias_factors']
-    args_dict['enable_explicit_gc_bias_modeling'] = imported_denoising_config_dict['enable_explicit_gc_bias_modeling']
-    args_dict['disable_bias_factors_in_flat_class'] = imported_denoising_config_dict['disable_bias_factors_in_flat_class']
-    args_dict['max_bias_factors'] = imported_denoising_config_dict['max_bias_factors']
-    args_dict['enable_bias_factors'] = imported_denoising_config_dict['enable_bias_factors']
-    args_dict['num_gc_bins'] = imported_denoising_config_dict['num_gc_bins']
-    args_dict['gc_curve_sd'] = imported_denoising_config_dict['gc_curve_sd']
+    # import model configuration and update args dict
+    update_args_dict_from_exported_model(args.input_model_path, args_dict)
 
-    logging.info("- bias factors enabled: " + repr(args_dict['enable_bias_factors']))
-    logging.info("- explicit GC bias modeling enabled: " + repr(args_dict['enable_explicit_gc_bias_modeling']))
-    logging.info("- bias factors in flat classes disabled: " + repr(args_dict['disable_bias_factors_in_flat_class']))
-    if args_dict['enable_bias_factors']:
-        logging.info("- maximum number of bias factors: " + repr(args_dict['enable_bias_factors']))
-    if args_dict['enable_explicit_gc_bias_modeling']:
-        logging.info("- number of GC curve knobs: " + repr(args_dict['num_gc_bins']))
-        logging.info("- GC curve prior standard deviation: " + repr(args_dict['gc_curve_sd']))
-
+    # setup the case denoising and calling task
     denoising_config = gcnvkernel.DenoisingModelConfig.from_args_dict(args_dict)
     calling_config = gcnvkernel.CopyNumberCallingConfig.from_args_dict(args_dict)
     inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)

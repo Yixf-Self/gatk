@@ -135,13 +135,14 @@ class SamplePloidyExporter:
 
             # generate sample ploidy metadata
             sample_ploidy_metadata = SamplePloidyMetadata(
-                sample_name, ploidy_j, ploidy_genotyping_quality_j, self.ploidy_workspace.targets_metadata.contig_list)
+                sample_name, ploidy_j, ploidy_genotyping_quality_j,
+                self.ploidy_workspace.interval_list_metadata.contig_list)
 
             # generate sample read depth metadata
             sample_read_depth_metadata = SampleReadDepthMetadata.generate_sample_read_depth_metadata(
                 self.ploidy_workspace.sample_metadata_collection.get_sample_coverage_metadata(sample_name),
                 sample_ploidy_metadata,
-                self.ploidy_workspace.targets_metadata)
+                self.ploidy_workspace.interval_list_metadata)
 
             # export contig ploidy
             self._export_sample_contig_ploidy(

@@ -1,6 +1,6 @@
 import numpy as np
 from collections import deque
-from typing import Deque, Tuple
+from typing import Deque, Tuple, Optional
 
 
 class NonStationaryLinearRegression:
@@ -15,14 +15,17 @@ class NonStationaryLinearRegression:
         self._n_obs: int = 0
         self._window: int = window
         self._obs_buffer: Deque[float] = deque([], window)
-        self._lambda: float = None  # forgetting factor
-        self._slope: float = None
-        self._intercept: float = None
-        self._variance: float = None
-        self._weights, self._summed_weights, self._x, self._kern = None, None, None, None
+        self._lambda: Optional[float] = None  # forgetting factor
+        self._slope: Optional[float] = None
+        self._intercept: Optional[float] = None
+        self._variance: Optional[float] = None
+        self._weights: Optional[np.ndarray] = None
+        self._summed_weights: Optional[float] = None
+        self._x: Optional[np.ndarray] = None
+        self._kern: Optional[np.ndarray] = None
 
     @staticmethod
-    def get_lambda(window: int):
+    def get_lambda(window: int) -> float:
         return np.exp(-np.log(2.0) / window)
 
     @staticmethod
@@ -56,11 +59,11 @@ class NonStationaryLinearRegression:
         dev = y - self._intercept - self._slope * self._x
         self._variance = np.sum(self._weights * (dev ** 2)) / self._summed_weights
 
-    def get_slope(self):
+    def get_slope(self) -> Optional[float]:
         return self._slope
 
-    def get_intercept(self):
+    def get_intercept(self) -> Optional[float]:
         return self._intercept
 
-    def get_variance(self):
+    def get_variance(self) -> Optional[float]:
         return self._variance

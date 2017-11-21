@@ -14,7 +14,7 @@ from ..tasks.inference_task_base import HybridInferenceParameters, GeneralizedCo
 from . import commons
 from .. import config, types
 from ..structs.interval import Interval
-from ..structs.metadata import TargetsIntervalListMetadata, SampleMetadataCollection
+from ..structs.metadata import IntervalListMetadata, SampleMetadataCollection
 
 _logger = logging.getLogger(__name__)
 
@@ -127,24 +127,24 @@ class PloidyModelConfig:
 class PloidyWorkspace:
     def __init__(self,
                  ploidy_config: PloidyModelConfig,
-                 targets_metadata: TargetsIntervalListMetadata,
+                 interval_list_metadata: IntervalListMetadata,
                  sample_names: List[str],
                  sample_metadata_collection: SampleMetadataCollection):
-        self.targets_metadata = targets_metadata
+        self.interval_list_metadata = interval_list_metadata
         self.sample_metadata_collection = sample_metadata_collection
         self.ploidy_config = ploidy_config
-        self.num_contigs = targets_metadata.num_contigs
+        self.num_contigs = interval_list_metadata.num_contigs
         self.sample_names = sample_names
         self.num_samples: int = len(sample_names)
         self.num_ploidy_states = ploidy_config.num_ploidy_states
-        assert all([contig in ploidy_config.contig_set for contig in targets_metadata.contig_set]), \
+        assert all([contig in ploidy_config.contig_set for contig in interval_list_metadata.contig_set]), \
             "Some contigs do not have ploidy priors; cannot continue."
         assert sample_metadata_collection.all_samples_have_coverage_metadata(sample_names), \
             "Some samples do not have coverage metadata; cannot continue."
 
-        # number of targets per contig as a shared theano tensor
-        self.t_j: types.TensorSharedVariable = th.shared(targets_metadata.t_j.astype(types.floatX),
-                                                         name='t_j', borrow=config.borrow_numpy)
+        # number of intervals per contig as a shared theano tensor
+        self.t_j: types.TensorSharedVariable = th.shared(
+            interval_list_metadata.t_j.astype(types.floatX), name='t_j', borrow=config.borrow_numpy)
 
         # count per contig and total count as shared theano tensors
         n_sj = np.zeros((self.num_samples, self.num_contigs), dtype=types.floatX)
@@ -163,7 +163,7 @@ class PloidyWorkspace:
 
         # ploidy priors
         p_ploidy_jk = np.zeros((self.num_contigs, self.ploidy_config.num_ploidy_states), dtype=types.floatX)
-        for j, contig in enumerate(targets_metadata.contig_list):
+        for j, contig in enumerate(interval_list_metadata.contig_list):
             p_ploidy_jk[j, :] = ploidy_config.contig_ploidy_prior_map[contig][:]
         log_p_ploidy_jk = np.log(p_ploidy_jk)
         self.log_p_ploidy_jk: types.TensorSharedVariable = th.shared(log_p_ploidy_jk, name='log_p_ploidy_jk',
@@ -187,8 +187,8 @@ class PloidyWorkspace:
         self.contig_exclusion_mask_jj = th.shared(contig_exclusion_mask_jj, name='contig_exclusion_mask_jj')
 
     @staticmethod
-    def _get_contig_set_from_interval_list(targets_interval_list: List[Interval]) -> Set[str]:
-        return {target.contig for target in targets_interval_list}
+    def _get_contig_set_from_interval_list(interval_list: List[Interval]) -> Set[str]:
+        return {interval.contig for interval in interval_list}
 
 
 class PloidyModel(GeneralizedContinuousModel):

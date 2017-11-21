@@ -118,8 +118,8 @@ def update_sample_metadata_collection_from_ploidy_determination_calls(
             sample_read_depth_metadata = get_sample_read_depth_metadata(sample_ploidy_results_dir)
             sample_ploidy_metadata = get_sample_ploidy_metadata(sample_ploidy_results_dir)
             assert sample_read_depth_metadata.sample_name == sample_name, \
-                "Inconsistency detected in the ploidy determination results"
+                "Inconsistency detected in the ploidy determination results; cannot continue"
             assert sample_ploidy_metadata.sample_name == sample_name, \
-                "Inconsistency detected in the ploidy determination results"
+                "Inconsistency detected in the ploidy determination results; cannot continue"
             sample_metadata_collection.add_sample_read_depth_metadata(sample_read_depth_metadata)
             sample_metadata_collection.add_sample_ploidy_metadata(sample_ploidy_metadata)

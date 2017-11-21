@@ -74,14 +74,14 @@ if __name__ == "__main__":
     contig_ploidy_prior_file = os.path.join(args.input_model_path,
                                             gcnvkernel.io_consts.default_contig_ploidy_prior_tsv_filename)
     assert os.path.exists(contig_ploidy_prior_file) and os.path.isfile(contig_ploidy_prior_file),\
-        "The provided ploidy model does not include contig ploidy priors .tsv file"
+        "The provided ploidy model is corrupted: it does not include contig ploidy priors .tsv file"
     contig_ploidy_prior_map = gcnvkernel.PloidyModelConfig.get_contig_ploidy_prior_map_from_tsv_file(
         contig_ploidy_prior_file)
 
-    # load targets interval list from the model
+    # load interval list from the model
     interval_list_file = os.path.join(args.input_model_path, gcnvkernel.io_consts.default_interval_list_filename)
     assert os.path.exists(interval_list_file) and os.path.isfile(interval_list_file),\
-        "The provided ploidy model does not include interval list .tsv file"
+        "The provided ploidy model is corrupted: it does not include interval list .tsv file"
     interval_list = gcnvkernel.io_intervals_and_counts.load_interval_list_tsv_file(interval_list_file)
 
     # load sample coverage metadata
@@ -89,13 +89,14 @@ if __name__ == "__main__":
     sample_names = gcnvkernel.io_metadata.read_sample_coverage_metadata(
         sample_metadata_collection, args.sample_coverage_metadata)
 
-    # generate targets metadata
-    intervals_metadata: gcnvkernel.TargetsIntervalListMetadata = gcnvkernel.TargetsIntervalListMetadata(interval_list)
+    # generate intervals metadata
+    intervals_metadata: gcnvkernel.IntervalListMetadata = gcnvkernel.IntervalListMetadata(interval_list)
 
     # inject ploidy prior map to the dictionary of parsed args
     args_dict = args.__dict__
     args_dict['contig_ploidy_prior_map'] = contig_ploidy_prior_map
 
+    # setup the case ploidy inference task
     ploidy_config = gcnvkernel.PloidyModelConfig.from_args_dict(args_dict)
     ploidy_inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)
     ploidy_workspace = gcnvkernel.PloidyWorkspace(ploidy_config, intervals_metadata, sample_names,
@@ -108,6 +109,6 @@ if __name__ == "__main__":
     ploidy_task.disengage()
 
     # sample sample-specific posteriors
-    gcnvkernel.io_ploidy.SamplePloidyExporter(ploidy_config, ploidy_workspace,
-                                              ploidy_task.continuous_model, ploidy_task.continuous_model_approx,
-                                              args.output_calls_path)()
+    gcnvkernel.io_ploidy.SamplePloidyExporter(
+        ploidy_config, ploidy_workspace, ploidy_task.continuous_model,
+        ploidy_task.continuous_model_approx, args.output_calls_path)()

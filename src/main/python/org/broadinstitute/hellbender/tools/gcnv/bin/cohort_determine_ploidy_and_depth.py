@@ -81,7 +81,7 @@ if __name__ == "__main__":
     contig_ploidy_prior_map = gcnvkernel.PloidyModelConfig.get_contig_ploidy_prior_map_from_tsv_file(
         args.contig_ploidy_prior_table)
 
-    # load targets interval list
+    # load interval list
     interval_list = gcnvkernel.io_intervals_and_counts.load_interval_list_tsv_file(args.interval_list)
 
     # load sample coverage metadata
@@ -89,8 +89,8 @@ if __name__ == "__main__":
     sample_names = gcnvkernel.io_metadata.read_sample_coverage_metadata(
         sample_metadata_collection, args.sample_coverage_metadata)
 
-    # generate targets metadata
-    intervals_metadata: gcnvkernel.TargetsIntervalListMetadata = gcnvkernel.TargetsIntervalListMetadata(interval_list)
+    # generate interval list metadata
+    intervals_metadata: gcnvkernel.IntervalListMetadata = gcnvkernel.IntervalListMetadata(interval_list)
 
     # inject ploidy prior map to the dictionary of parsed args
     args_dict = args.__dict__

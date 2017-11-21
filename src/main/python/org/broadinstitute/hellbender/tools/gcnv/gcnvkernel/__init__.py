@@ -14,7 +14,7 @@ from .models.model_denoising_calling import DefaultInitialModelParametersSupplie
 from .models.model_ploidy import PloidyModelConfig, PloidyWorkspace
 
 # metadata
-from .structs.metadata import TargetsIntervalListMetadata, SampleMetadataCollection,\
+from .structs.metadata import IntervalListMetadata, SampleMetadataCollection,\
     SampleCoverageMetadata, SamplePloidyMetadata
 
 # pre-processing and io

@@ -9,28 +9,28 @@ import os
 _logger = logging.getLogger(__name__)
 
 
-class TargetsIntervalListMetadata:
-    def __init__(self, targets_interval_list: List[Interval]):
-        _logger.info("Generating targets metadata...")
-        self.targets_interval_list = targets_interval_list
-        self.num_targets = len(targets_interval_list)
-        self.contig_set = self._get_contig_set_from_interval_list(targets_interval_list)
+class IntervalListMetadata:
+    def __init__(self, interval_list: List[Interval]):
+        _logger.info("Generating intervals metadata...")
+        self.interval_list = interval_list
+        self.num_intervals = len(interval_list)
+        self.contig_set = self._get_contig_set_from_interval_list(interval_list)
         self.contig_list = sorted(list(self.contig_set))
         self.num_contigs = len(self.contig_list)
 
-        # map from contig to indices in the target list
-        self.contig_target_indices: Dict[str, List[int]] = \
-            {contig: [ti for ti in range(len(targets_interval_list))
-                      if targets_interval_list[ti].contig == contig]
+        # map from contig to indices in the interval list
+        self.contig_interval_indices: Dict[str, List[int]] = \
+            {contig: [ti for ti in range(len(interval_list))
+                      if interval_list[ti].contig == contig]
              for contig in self.contig_set}
 
-        # number of targets per contig
-        self.t_j = np.asarray([len(self.contig_target_indices[self.contig_list[j]])
+        # number of intervals per contig
+        self.t_j = np.asarray([len(self.contig_interval_indices[self.contig_list[j]])
                                for j in range(self.num_contigs)], dtype=types.big_uint)
 
     @staticmethod
-    def _get_contig_set_from_interval_list(targets_interval_list: List[Interval]) -> Set[str]:
-        return {target.contig for target in targets_interval_list}
+    def _get_contig_set_from_interval_list(interval_list: List[Interval]) -> Set[str]:
+        return {interval.contig for interval in interval_list}
 
 
 class SampleCoverageMetadata:
@@ -71,11 +71,11 @@ class SampleCoverageMetadata:
     @staticmethod
     def generate_sample_coverage_metadata(sample_name,
                                           n_t: np.ndarray,
-                                          targets_metadata: TargetsIntervalListMetadata):
-        n_j = np.zeros((len(targets_metadata.contig_list),), dtype=types.big_uint)
-        for j, contig in enumerate(targets_metadata.contig_list):
-            n_j[j] = np.sum(n_t[targets_metadata.contig_target_indices[contig]])
-        return SampleCoverageMetadata(sample_name, n_j, targets_metadata.contig_list)
+                                          interval_list_metadata: IntervalListMetadata):
+        n_j = np.zeros((len(interval_list_metadata.contig_list),), dtype=types.big_uint)
+        for j, contig in enumerate(interval_list_metadata.contig_list):
+            n_j[j] = np.sum(n_t[interval_list_metadata.contig_interval_indices[contig]])
+        return SampleCoverageMetadata(sample_name, n_j, interval_list_metadata.contig_list)
 
 
 class SamplePloidyMetadata:
@@ -99,7 +99,7 @@ class SamplePloidyMetadata:
         self.contig_list = contig_list
         self.ploidy_j = ploidy_j.astype(types.small_uint)
         self.ploidy_genotyping_quality_j = ploidy_genotyping_quality_j.astype(types.floatX)
-        self._contig_map: Dict[str, int] = {contig: j for j, contig in enumerate(contig_list)}
+        self._contig_map = {contig: j for j, contig in enumerate(contig_list)}
 
     def _assert_contig_exists(self, contig: str):
         assert contig in self._contig_map, \
@@ -127,12 +127,12 @@ class SampleReadDepthMetadata:
     @staticmethod
     def generate_sample_read_depth_metadata(sample_coverage_metadata: SampleCoverageMetadata,
                                             sample_ploidy_metadata: SamplePloidyMetadata,
-                                            targets_metadata: TargetsIntervalListMetadata) -> 'SampleReadDepthMetadata':
+                                            interval_list_metadata: IntervalListMetadata) -> 'SampleReadDepthMetadata':
         assert sample_coverage_metadata.sample_name == sample_ploidy_metadata.sample_name
-        assert targets_metadata.contig_list == sample_ploidy_metadata.contig_list
+        assert interval_list_metadata.contig_list == sample_ploidy_metadata.contig_list
         sample_name = sample_ploidy_metadata.sample_name
         n_total = sample_coverage_metadata.n_total
-        t_j = targets_metadata.t_j
+        t_j = interval_list_metadata.t_j
         ploidy_j = sample_ploidy_metadata.ploidy_j
         effective_total_copies = float(np.sum(t_j * ploidy_j))
         read_depth = float(n_total) / effective_total_copies

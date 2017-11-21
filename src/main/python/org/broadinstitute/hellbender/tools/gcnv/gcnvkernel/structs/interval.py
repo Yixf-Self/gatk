@@ -10,9 +10,9 @@ class Interval:
         Equality test and hashing is based on get_key() which excludes all annotations
     """
     def __init__(self, contig: str, start: int, end: int):
-        self.contig: str = str(contig)
-        self.start: int = int(start)
-        self.end: int = int(end)
+        self.contig = str(contig)
+        self.start = int(start)
+        self.end = int(end)
         self.annotations = dict()
         self._hash = hash(self.get_key())
 
