@@ -1,7 +1,6 @@
+import numpy as np
 import logging
 from typing import List, Set
-
-import numpy as np
 
 from ..structs.interval import Interval
 from .. import types

@@ -50,6 +50,10 @@ class Caller:
     def call(self) -> 'CallerUpdateSummary':
         raise NotImplementedError
 
+    @abstractmethod
+    def update_auxiliary_vars(self) -> None:
+        raise NotImplemented
+
 
 class CallerUpdateSummary:
     @abstractmethod
@@ -175,7 +179,7 @@ class HybridInferenceTask(InferenceTask):
                 self.temperature: types.TensorSharedVariable = th.shared(
                     np.asarray([initial_temperature], dtype=types.floatX))
             initial_temperature = self.temperature.get_value()[0]
-            if np.abs(initial_temperature - 1.0) < 1e-10:  # no annealing
+            if np.abs(initial_temperature - 1.0) < 1e-10 or hybrid_inference_params.disable_annealing:  # no annealing
                 temperature_update = None
             else:
                 max_thermal_advi_iterations = self.hybrid_inference_params.max_advi_iter_first_epoch
@@ -414,6 +418,7 @@ class HybridInferenceTask(InferenceTask):
                 raise KeyboardInterrupt
 
             finally:
+                self.caller.update_auxiliary_vars()
                 self.calling_hist.append((self.i_advi, iters_converged, first_call_converged))
                 # if there is a self-consistency loop and not converged ...
                 if not iters_converged and self.hybrid_inference_params.max_calling_iters > 1:
@@ -454,7 +459,8 @@ class HybridInferenceParameters:
                  sampler_smoothing_window: int = 0,
                  caller_summary_statistics_reducer: Callable[[np.ndarray], float] = np.mean,
                  disable_sampler: bool = False,
-                 disable_caller: bool = False):
+                 disable_caller: bool = False,
+                 disable_annealing: bool = False):
         self.learning_rate = learning_rate
         self.adamax_beta1 = adamax_beta1
         self.adamax_beta2 = adamax_beta2
@@ -483,6 +489,7 @@ class HybridInferenceParameters:
         self.caller_summary_statistics_reducer = caller_summary_statistics_reducer
         self.disable_sampler = disable_sampler
         self.disable_caller = disable_caller
+        self.disable_annealing = disable_annealing
 
         self._assert_params()
 
@@ -496,6 +503,10 @@ class HybridInferenceParameters:
 
         if self.track_model_params:
             assert self.param_tracker_config is not None
+
+        if self.disable_annealing and self.initial_temperature > 1.0:
+            _logger.warning("Annealing is disabled but the initial temperature is > 1.0. This makes inferences "
+                            "in a thermal state. Ignore this warning if this run mode is intended.")
 
     @staticmethod
     def expose_args(args: argparse.ArgumentParser, override_default: Dict[str, Any] = None, hide: Set[str] = None):
@@ -598,6 +609,10 @@ class HybridInferenceParameters:
         process_and_maybe_add("disable_caller",
                               type=bool,
                               help="Disable caller (advanced)")
+
+        process_and_maybe_add("disable_annealing",
+                              type=bool,
+                              help="Keep the temperature pinned at its initial value and disable annealing (advanced)")
 
     @staticmethod
     def from_args_dict(args_dict: Dict):

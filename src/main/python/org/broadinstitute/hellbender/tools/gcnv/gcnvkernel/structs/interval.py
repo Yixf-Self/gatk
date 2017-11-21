@@ -37,7 +37,8 @@ class Interval:
         if self.contig != other.contig:
             return False
         else:
-            if other.start <= self.end <= other.end or other.start <= self.start <= other.end:
+            if other.start <= self.end <= other.end or other.start <= self.start <= other.end or\
+               self.start <= other.end <= self.end or self.start <= other.start <= self.end:
                 return True
             else:
                 return False

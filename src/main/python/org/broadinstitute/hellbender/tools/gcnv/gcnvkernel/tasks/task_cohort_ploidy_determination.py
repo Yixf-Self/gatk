@@ -25,6 +25,9 @@ class PloidyCaller(Caller):
         return PloidyCallerUpdateSummary(
             update_norm_sj, self.hybrid_inference_params.caller_summary_statistics_reducer)
 
+    def update_auxiliary_vars(self):
+        pass
+
 
 class PloidyCallerUpdateSummary(CallerUpdateSummary):
     def __init__(self,

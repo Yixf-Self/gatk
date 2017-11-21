@@ -18,7 +18,7 @@ from .structs.metadata import IntervalListMetadata, SampleMetadataCollection,\
     SampleCoverageMetadata, SamplePloidyMetadata
 
 # pre-processing and io
-from . import preprocess
+from .preprocess.interval_list_mask import IntervalListMask
 from .io import io_consts, io_ploidy, io_denoising_calling, io_intervals_and_counts, io_metadata
 from .utils import cli_commons
 

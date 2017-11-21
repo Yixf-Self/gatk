@@ -34,6 +34,9 @@ class HHMMClassAndCopyNumberCaller(Caller):
             class_update, class_log_likelihood,
             self.hybrid_inference_params.caller_summary_statistics_reducer)
 
+    def update_auxiliary_vars(self):
+        self.copy_number_basic_caller.update_auxiliary_vars()
+
 
 class HHMMClassAndCopyNumberCallerUpdateSummary(CallerUpdateSummary):
     def __init__(self,

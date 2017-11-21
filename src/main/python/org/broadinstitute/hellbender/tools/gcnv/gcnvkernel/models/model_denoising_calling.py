@@ -39,6 +39,7 @@ class DenoisingModelConfig:
                  num_gc_bins: int = 20,
                  gc_curve_sd: float = 1.0,
                  q_c_expectation_mode: str = 'hybrid',
+                 flat_class_padding_hybrid_mode: int = 50000,
                  enable_bias_factors: bool = True,
                  enable_explicit_gc_bias_modeling: bool = False,
                  disable_bias_factors_in_flat_class: bool = False):
@@ -54,6 +55,9 @@ class DenoisingModelConfig:
         :param gc_curve_sd: standard deviation of each knob in the GC curve
         :param q_c_expectation_mode: approximation scheme to use for calculating posterior expectations
                                      with respect to the copy number posteriors
+        :param flat_class_padding_hybrid_mode: if q_c_expectation_mode is 'hybrid', the highly likely flat intervals
+                                               will be further padded by this value (in units of np) in order to
+                                               achieve higher sensitivity in calling common CNVs)
         :param enable_bias_factors: enable bias factor discovery
         :param enable_explicit_gc_bias_modeling: enable explicit GC bias modeling
         :param disable_bias_factors_in_flat_class:
@@ -69,6 +73,7 @@ class DenoisingModelConfig:
         self.num_gc_bins = num_gc_bins
         self.gc_curve_sd = gc_curve_sd
         self.q_c_expectation_mode = q_c_expectation_mode
+        self.flat_class_padding_hybrid_mode = flat_class_padding_hybrid_mode
         self.enable_bias_factors = enable_bias_factors
         self.enable_explicit_gc_bias_modeling = enable_explicit_gc_bias_modeling
         self.disable_bias_factors_in_flat_class = disable_bias_factors_in_flat_class
@@ -130,6 +135,12 @@ class DenoisingModelConfig:
                               choices=DenoisingModelConfig._q_c_expectation_modes,
                               help="The strategy for calculating copy number posterior expectations in the denoising "
                                    "model")
+
+        process_and_maybe_add("flat_class_padding_hybrid_mode",
+                              type=int,
+                              help="If q_c_expectation_mode is set to 'hybrid', the likely flat intervals "
+                                   "will be further padded by this value (in the units of bp) in order to achieve "
+                                   "higher sensitivity in detecting common CNVs and to avoid boundary artifacts")
 
         process_and_maybe_add("enable_bias_factors",
                               type=bool,
@@ -255,7 +266,7 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
     def initialize_posterior(denoising_config: DenoisingModelConfig,
                              calling_config: CopyNumberCallingConfig,
                              shared_workspace: 'DenoisingCallingWorkspace'):
-        # class log posterior probs
+        # interval class log posterior probs
         if calling_config.initialize_to_flat_class:
             log_q_tau_tk = (-np.log(calling_config.num_copy_number_classes - 1)
                             * np.ones((shared_workspace.num_intervals, calling_config.num_copy_number_classes),
@@ -269,8 +280,6 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
         # copy number log posterior probs
         log_q_c_stc = np.zeros((shared_workspace.num_samples, shared_workspace.num_intervals,
                                 calling_config.num_copy_number_states), dtype=types.floatX)
-
-        # auxiliary variables
         c_map_st = np.zeros((shared_workspace.num_samples, shared_workspace.num_intervals), dtype=np.int)
 
         log_p_alt = np.log(calling_config.p_alt)
@@ -283,6 +292,14 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
 
         shared_workspace.log_q_c_stc = th.shared(log_q_c_stc, name="log_q_c_stc", borrow=config.borrow_numpy)
         shared_workspace.c_map_st = th.shared(c_map_st, name="c_map_st", borrow=config.borrow_numpy)
+
+        if denoising_config.q_c_expectation_mode == 'hybrid':
+            # bitmask for intervals of which the probability of being in the silent class is below 0.5
+            flat_class_bitmask_t = log_q_tau_tk[:, 0] < -np.log(2)
+            shared_workspace.flat_class_bitmask_t = th.shared(flat_class_bitmask_t, name="flat_class_bitmask_t",
+                                                              borrow=config.borrow_numpy)
+        else:
+            shared_workspace.flat_class_bitmask_t = None
 
 
 class DenoisingCallingWorkspace:
@@ -302,6 +319,10 @@ class DenoisingCallingWorkspace:
             - sample names in sample_metadata_collection must match those in sample_names
 
         """
+        self.denoising_config = denoising_config
+        self.calling_config = calling_config
+        self.interval_list = interval_list
+
         assert n_st.ndim == 2, "read counts matrix must be a dim=2 ndarray with shape (num_samples, num_intervals)"
 
         self.num_samples: int = n_st.shape[0]
@@ -309,7 +330,6 @@ class DenoisingCallingWorkspace:
 
         assert len(interval_list) == self.num_intervals,\
             "the length of the interval list is incompatible with the shape of the read counts matrix"
-        self.interval_list = interval_list
 
         assert baseline_copy_number_s.ndim == 1, "TODO informative message"
         assert baseline_copy_number_s.size == self.num_samples, "TODO informative message"
@@ -321,10 +341,9 @@ class DenoisingCallingWorkspace:
         assert global_read_depth_s.size == self.num_samples, "TODO informative message"
         self.global_read_depth_s = global_read_depth_s.astype(types.floatX)
 
-        # todo note the type change!
         # read counts array as a shared theano tensor
         self.n_st: types.TensorSharedVariable = th.shared(
-            n_st.astype(types.floatX), name="n_st", borrow=config.borrow_numpy)
+            n_st.astype(types.med_uint), name="n_st", borrow=config.borrow_numpy)
 
         # distance between subsequent intervals
         self.dist_t: types.TensorSharedVariable = th.shared(
@@ -342,8 +361,11 @@ class DenoisingCallingWorkspace:
         #   subsequently updated by HHMMClassAndCopyNumberCaller.update_copy_number_log_posterior()
         self.log_q_c_stc: types.TensorSharedVariable = None
 
-        # auxiliary
+        # latest MAP estimate of integer copy number (updated by HHMMClassAndCopyNumberCaller)
         self.c_map_st: types.TensorSharedVariable = None
+
+        # latest bitmask of flat intervals (updated by HHMMClassAndCopyNumberCaller if q_c_expectation_mode == 'hybrid')
+        self.flat_class_bitmask_t: types.TensorSharedVariable = None
 
         # copy number emission log posterior
         #   updated by LogEmissionPosteriorSampler.update_log_copy_number_emission_posterior()
@@ -390,8 +412,52 @@ class DenoisingCallingWorkspace:
             self.W_gc_tg = self._create_sparse_gc_bin_tensor_tg(
                 self.interval_list, denoising_config.num_gc_bins)
 
+        # auxiliary data structures for hybrid q_c_expectation_mode calculation
+        if denoising_config.q_c_expectation_mode == 'hybrid':
+            self.interval_neighbor_index_list = self._get_interval_neighbor_index_list(
+                interval_list, denoising_config.flat_class_padding_hybrid_mode)
+        else:
+            self.interval_neighbor_index_list = None
+
         # initialize posterior
         posterior_initializer.initialize_posterior(denoising_config, calling_config, self)
+
+    @staticmethod
+    def _get_interval_neighbor_index_list(interval_list: List[Interval],
+                                          maximum_neighbor_distance: int) -> List[List[int]]:
+        """
+        Pads a given interval list, finds the index of overlapping neighbors, and returns a list of indices of
+        overlapping neighbors.
+
+        Note: It is assumed that the interval_list is sorted.
+
+        :param interval_list: List of intervals
+        :param maximum_neighbor_distance: Maximum shortest distance between intervals to be considered neighbors
+        :return: A list of indices of overlapping neighbors with the same length as interval_list. Each element
+                 in a variable-length list, depending on the number of neighbors.
+        """
+        assert maximum_neighbor_distance >= 0
+        num_intervals = len(interval_list)
+        padded_interval_list = [interval.get_padded(maximum_neighbor_distance) for interval in interval_list]
+        interval_neighbor_index_list = []
+        for ti, padded_interval in enumerate(padded_interval_list):
+            overlapping_interval_indices = [ti]
+            right_ti = ti
+            while right_ti < num_intervals - 1:
+                right_ti += 1
+                if interval_list[right_ti].overlaps_with(padded_interval):
+                    overlapping_interval_indices.append(right_ti)
+                else:
+                    break
+            left_ti = ti
+            while left_ti > 0:
+                left_ti -= 1
+                if interval_list[left_ti].overlaps_with(padded_interval):
+                    overlapping_interval_indices.append(left_ti)
+                else:
+                    break
+            interval_neighbor_index_list.append(overlapping_interval_indices)
+        return interval_neighbor_index_list
 
     @staticmethod
     def _get_log_trans_tkk(dist_t: np.ndarray,
@@ -595,9 +661,9 @@ class DenoisingModel(GeneralizedContinuousModel):
 
         elif denoising_model_config.q_c_expectation_mode == 'hybrid':
             def _copy_number_emission_logp(_n_st):
-                flat_class_bitmask = tt.lt(self.shared_workspace.log_q_tau_tk[:, 0], -tt.log(2))
-                flat_class_indices = flat_class_bitmask.nonzero()[0]
-                ref_class_indices = (1 - flat_class_bitmask).nonzero()[0]
+                flat_class_bitmask_t = self.shared_workspace.flat_class_bitmask_t
+                flat_class_indices = flat_class_bitmask_t.nonzero()[0]
+                ref_class_indices = (1 - flat_class_bitmask_t).nonzero()[0]
 
                 # for flat classes, calculate exact posterior expectation
                 mu_flat_stc = ((1.0 - eps) * read_depth_s.dimshuffle(0, 'x', 'x')
@@ -623,23 +689,11 @@ class DenoisingModel(GeneralizedContinuousModel):
                 return flat_class_logp + ref_class_logp
 
         else:
-            raise Exception("Unknown q_c expectation mode")
+            raise Exception("Unknown q_c expectation mode; an exception should have been raised earlier")
 
         DensityDist(name='n_st_obs',
                     logp=_copy_number_emission_logp,
                     observed=shared_workspace.n_st)
-
-    def reset(self):
-        return
-        # self.shared_workspace.log_copy_number_emission_stc.zero()
-
-    # @property
-    # def more_updates(self):
-    #     if not self.approx_available:
-    #         return None
-    #     return [(self.shared_workspace.log_copy_number_emission_stc,
-    #              self.shared_workspace.log_copy_number_emission_stc
-    #              + self.approx.sample_node(self['log_copy_number_emission_stc'], size=1)[0, ...])]
 
 
 class CopyNumberEmissionBasicSampler:
@@ -756,7 +810,7 @@ class HHMMClassAndCopyNumberBasicCaller:
         self._get_copy_number_hmm_specs_theano_func = self._get_compiled_copy_number_hmm_specs_theano_func()
 
         # compiled function for update of auxiliary variables
-        self._update_aux_theano_func = self._get_update_aux_theano_func()
+        self._update_c_map_st_theano_func = self._get_update_c_map_st_theano_func()
 
     def call(self,
              copy_number_update_summary_statistic_reducer,
@@ -779,9 +833,6 @@ class HHMMClassAndCopyNumberBasicCaller:
         else:
             class_update = None
             class_log_likelihood = None
-
-        # update auxiliary variables
-        self._update_aux()
 
         return copy_number_update_s, copy_number_log_likelihoods_s, class_update, class_log_likelihood
 
@@ -861,8 +912,20 @@ class HHMMClassAndCopyNumberBasicCaller:
         log_likelihood = float(fb_result[1])
         return class_update_size, log_likelihood
 
-    def _update_aux(self):
-        self._update_aux_theano_func()
+    def _update_flat_class_bitmask_t(self):
+        if self.shared_workspace.denoising_config.q_c_expectation_mode == 'hybrid':
+            _logger.debug("Updating flat class bitmask...")
+            flat_class_bitmask_t: np.ndarray = (self.shared_workspace.log_q_tau_tk.get_value(borrow=True)[:, 0]
+                                                < -np.log(2))
+            padded_flat_class_bitmask_t = np.zeros_like(flat_class_bitmask_t)
+            for ti, neighbor_index_list in enumerate(self.shared_workspace.interval_neighbor_index_list):
+                padded_flat_class_bitmask_t[ti] = np.any(flat_class_bitmask_t[neighbor_index_list])
+            self.shared_workspace.flat_class_bitmask_t.set_value(
+                padded_flat_class_bitmask_t, borrow=config.borrow_numpy)
+
+    def update_auxiliary_vars(self):
+        self._update_c_map_st_theano_func()
+        self._update_flat_class_bitmask_t()
 
     @th.configparser.change_flags(compute_test_value="off")
     def _get_compiled_copy_number_hmm_specs_theano_func(self):
@@ -962,7 +1025,7 @@ class HHMMClassAndCopyNumberBasicCaller:
             (self.shared_workspace.log_class_emission_tk, log_class_emission_tk)])
 
     @th.configparser.change_flags(compute_test_value="off")
-    def _get_update_aux_theano_func(self):
+    def _get_update_c_map_st_theano_func(self):
         c_map_st = tt.argmax(self.shared_workspace.log_q_c_stc, axis=2)
 
         return th.function(inputs=[], outputs=[], updates=[

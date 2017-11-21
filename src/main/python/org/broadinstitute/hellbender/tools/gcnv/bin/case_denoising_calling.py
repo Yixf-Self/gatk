@@ -57,7 +57,7 @@ gcnvkernel.DenoisingModelConfig.expose_args(
         "--enable_explicit_gc_bias_modeling",
         "--disable_bias_factors_in_flat_class",
         "--num_gc_bins",
-        "--gc_curve_sd"
+        "--gc_curve_sd",
     })
 
 # add calling config args
