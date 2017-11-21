@@ -83,29 +83,39 @@ class PloidyModelConfig:
         return contig_ploidy_prior_map
 
     @staticmethod
-    def expose_args(args: argparse.ArgumentParser):
-        group = args.add_argument_group(title="Germline contig ploidy determination model hyperparameters")
+    def expose_args(args: argparse.ArgumentParser, hide: Set[str] = None):
+        group = args.add_argument_group(title="Copy number calling parameters")
+        if hide is None:
+            hide = set()
+
         initializer_params = inspect.signature(PloidyModelConfig.__init__).parameters
 
-        group.add_argument("--mean_bias_sd",
-                           type=float,
-                           help="Contig-level mean bias standard deviation",
-                           default=initializer_params['mean_bias_sd'].default)
+        def process_and_maybe_add(arg, **kwargs):
+            full_arg = "--" + arg
+            if full_arg in hide:
+                return
+            kwargs['default'] = initializer_params[arg].default
+            group.add_argument(full_arg, **kwargs)
 
-        group.add_argument("--mapping_error_rate",
-                           type=float,
-                           help="Typical mapping error rate",
-                           default=initializer_params['mapping_error_rate'].default)
+        process_and_maybe_add("mean_bias_sd",
+                              type=float,
+                              help="Contig-level mean bias standard deviation",
+                              default=initializer_params['mean_bias_sd'].default)
 
-        group.add_argument("--psi_j_scale",
-                           type=float,
-                           help="Global contig-level unexplained variance scale",
-                           default=initializer_params['psi_j_scale'].default)
+        process_and_maybe_add("mapping_error_rate",
+                              type=float,
+                              help="Typical mapping error rate",
+                              default=initializer_params['mapping_error_rate'].default)
 
-        group.add_argument("--psi_s_scale",
-                           type=float,
-                           help="Sample-specific contig-level unexplained variance scale",
-                           default=initializer_params['psi_s_scale'].default)
+        process_and_maybe_add("psi_j_scale",
+                              type=float,
+                              help="Global contig-level unexplained variance scale",
+                              default=initializer_params['psi_j_scale'].default)
+
+        process_and_maybe_add("psi_s_scale",
+                              type=float,
+                              help="Sample-specific contig-level unexplained variance scale",
+                              default=initializer_params['psi_s_scale'].default)
 
     @staticmethod
     def from_args_dict(args_dict: Dict):

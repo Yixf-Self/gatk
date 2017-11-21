@@ -2,14 +2,12 @@ import numpy as np
 import pymc3 as pm
 import logging
 from typing import Callable
-from ..models import commons
 
 from .inference_task_base import Sampler, Caller, CallerUpdateSummary,\
     HybridInferenceTask, HybridInferenceParameters
 from .. import config, types
 from ..models.model_ploidy import PloidyModelConfig, PloidyModel,\
     PloidyWorkspace, PloidyEmissionBasicSampler, PloidyBasicCaller
-from ..structs import metadata
 
 _logger = logging.getLogger(__name__)
 
@@ -73,12 +71,12 @@ class PloidyEmissionSampler(Sampler):
         return self.ploidy_workspace.log_ploidy_emission_sjk.get_value(borrow=True)
 
 
-class PloidyInferenceTask(HybridInferenceTask):
+class CohortPloidyInferenceTask(HybridInferenceTask):
     def __init__(self,
                  hybrid_inference_params: HybridInferenceParameters,
                  ploidy_config: PloidyModelConfig,
                  ploidy_workspace: PloidyWorkspace):
-        _logger.info("Instantiating the contig-level coverage model...")
+        _logger.info("Instantiating the germline contig ploidy determination model...")
         ploidy_model = PloidyModel(ploidy_config, ploidy_workspace)
 
         _logger.info("Instantiating the ploidy emission sampler...")
@@ -88,6 +86,7 @@ class PloidyInferenceTask(HybridInferenceTask):
         ploidy_caller = PloidyCaller(hybrid_inference_params, ploidy_workspace)
 
         elbo_normalization_factor = ploidy_workspace.num_samples * ploidy_workspace.num_contigs
+
         super().__init__(hybrid_inference_params, ploidy_model, ploidy_emission_sampler, ploidy_caller,
                          elbo_normalization_factor=elbo_normalization_factor,
                          advi_task_name="denoising",

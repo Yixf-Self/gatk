@@ -8,52 +8,13 @@ import logging
 import argparse
 import gcnvkernel
 
-
-class GCNVHelpFormatter(argparse.HelpFormatter):
-
-    def _get_help_string(self, action):
-        help = action.help
-        if '%(default)' not in action.help:
-            if action.default is not argparse.SUPPRESS:
-                defaulting_nargs = [argparse.OPTIONAL, argparse.ZERO_OR_MORE]
-                if action.option_strings or action.nargs in defaulting_nargs:
-                    help += ' (default: %(default)s)'
-        return help
-
-    def _get_default_metavar_for_optional(self, action):
-        return action.type.__name__
-
-    def _get_default_metavar_for_positional(self, action):
-        return action.type.__name__
-
+logger = logging.getLogger(__name__)
 
 parser = argparse.ArgumentParser(description="gCNV cohort denoising and calling tool",
-                                 formatter_class=GCNVHelpFormatter)
+                                 formatter_class=gcnvkernel.cli_commons.GCNVHelpFormatter)
 
-# logging
-parser.add_argument("--console_log_level",
-                    type=str,
-                    choices=["INFO", "WARNING", "DEBUG"],
-                    default="INFO",
-                    help="Console logging verbosity level")
-
-parser.add_argument("--logfile_log_level",
-                    type=str,
-                    choices=["INFO", "WARNING", "DEBUG"],
-                    default="DEBUG",
-                    help="Logfile logging verbosity level")
-
-parser.add_argument("--logfile",
-                    type=str,
-                    required=False,
-                    default=argparse.SUPPRESS,
-                    help="If provided, the output log will be written to file as well")
-
-log_level_map = {
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "DEBUG": logging.DEBUG
-}
+# logging args
+gcnvkernel.cli_commons.add_logging_args_to_argparse(parser)
 
 # add tool-specific args
 group = parser.add_argument_group(title="Required arguments")
@@ -71,17 +32,11 @@ group.add_argument("--read_count_tsv_files",
                    default=argparse.SUPPRESS,
                    help="List of read count files in the cohort (in .tsv format; must include sample name header)")
 
-group.add_argument("--sample_ploidy_metadata_table",
+group.add_argument("--ploidy_calls_path",
                    type=str,
                    required=True,
                    default=argparse.SUPPRESS,
-                   help="Contig ploidy metadata of all samples (in .tsv format)")
-
-group.add_argument("--sample_read_depth_metadata_table",
-                   type=str,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="Read depth metadata of all samples (in .tsv format)")
+                   help="The path to the results of ploidy determination tool")
 
 group.add_argument("--output_model_path",
                    type=str,
@@ -113,33 +68,20 @@ if __name__ == "__main__":
 
     # parse arguments
     args = parser.parse_args()
-
-    # file logger
-    logging.basicConfig(level=log_level_map[args.logfile_log_level],
-                        format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
-                        datefmt='%m-%d %H:%M',
-                        filename=args.logfile if hasattr(args, 'logfile') else '/dev/null',
-                        filemode='w')
-
-    # console logger
-    console = logging.StreamHandler()
-    console.setLevel(log_level_map[args.console_log_level])
-    formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
-    console.setFormatter(formatter)
-    logging.getLogger('').addHandler(console)
+    gcnvkernel.cli_commons.set_logging_config_from_args(args)
 
     # load modeling interval list
-    modeling_interval_list = gcnvkernel.io.load_interval_list_tsv_file(args.modeling_interval_list)
+    modeling_interval_list = gcnvkernel.io_intervals_and_counts.load_interval_list_tsv_file(args.modeling_interval_list)
 
     # load sample names, truncated counts, and interval list from the sample read counts table
-    logging.info("Loading {0} read counts file(s)...".format(len(args.read_count_tsv_files)))
-    sample_names, n_st = gcnvkernel.io.load_counts_in_the_modeling_zone(
+    logger.info("Loading {0} read counts file(s)...".format(len(args.read_count_tsv_files)))
+    sample_names, n_st = gcnvkernel.io_intervals_and_counts.load_counts_in_the_modeling_zone(
         args.read_count_tsv_files, modeling_interval_list)
 
     # load read depth and ploidy metadata
-    sample_metadata_collection = gcnvkernel.SampleMetadataCollection()
-    sample_metadata_collection.read_sample_read_depth_metadata(args.sample_read_depth_metadata_table)
-    sample_metadata_collection.read_sample_ploidy_metadata(args.sample_ploidy_metadata_table)
+    sample_metadata_collection: gcnvkernel.SampleMetadataCollection = gcnvkernel.SampleMetadataCollection()
+    gcnvkernel.io_metadata.update_sample_metadata_collection_from_ploidy_determination_calls(
+        sample_metadata_collection, args.ploidy_calls_path)
 
     # setup sample contig ploidy array
     contigs_set = {target.contig for target in modeling_interval_list}
@@ -161,18 +103,13 @@ if __name__ == "__main__":
     args_dict = args.__dict__
 
     denoising_config = gcnvkernel.DenoisingModelConfig.from_args_dict(args_dict)
-
     calling_config = gcnvkernel.CopyNumberCallingConfig.from_args_dict(args_dict)
-
     inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)
-
     shared_workspace = gcnvkernel.DenoisingCallingWorkspace(
         denoising_config, calling_config, modeling_interval_list,
         n_st, baseline_copy_number_s, read_depth_s)
-
     initial_params_supplier = gcnvkernel.DefaultDenoisingModelInitializer(
         denoising_config, calling_config, shared_workspace)
-
     task = gcnvkernel.CohortDenoisingAndCallingTask(
         denoising_config, calling_config, inference_params,
         shared_workspace, initial_params_supplier)
@@ -182,15 +119,20 @@ if __name__ == "__main__":
     task.disengage()
 
     # save model
-    gcnvkernel.io.DenoisingModelExporter(
+    gcnvkernel.io_denoising_calling.DenoisingModelExporter(
         denoising_config, calling_config,
         shared_workspace, task.continuous_model, task.continuous_model_approx,
         args.output_model_path)()
 
+    # save a copy of targets in the model path
+    shutil.copy(args.modeling_interval_list,
+                os.path.join(args.output_model_path, gcnvkernel.io_consts.default_interval_list_filename))
+
     # save calls
-    gcnvkernel.io.SampleDenoisingAndCallingPosteriorsExporter(
+    gcnvkernel.io_denoising_calling.SampleDenoisingAndCallingPosteriorsExporter(
         shared_workspace, task.continuous_model, task.continuous_model_approx, sample_names,
         args.output_calls_path)()
 
     # save a copy of targets in the calls path
-    shutil.copy(args.modeling_interval_list, os.path.join(args.output_calls_path, "interval_list.tsv"))
+    shutil.copy(args.modeling_interval_list,
+                os.path.join(args.output_calls_path, gcnvkernel.io_consts.default_interval_list_filename))

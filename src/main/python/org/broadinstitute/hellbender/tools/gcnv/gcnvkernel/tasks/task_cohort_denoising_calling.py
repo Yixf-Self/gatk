@@ -121,6 +121,7 @@ class CohortDenoisingAndCallingTask(HybridInferenceTask):
                 calling_config, hybrid_inference_params, shared_workspace, self.temperature)
 
         elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_targets
+
         super().__init__(hybrid_inference_params, denoising_model, copy_number_emission_sampler, copy_number_caller,
                          elbo_normalization_factor=elbo_normalization_factor,
                          advi_task_name="denoising",
