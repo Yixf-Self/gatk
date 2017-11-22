@@ -92,7 +92,8 @@ public final class GermlineCNVCaller extends CommandLineProgram {
     public static final String COHORT_DENOISING_CALLING_PYTHON_SCRIPT = "cohort_denoising_calling.py";
     public static final String CASE_SAMPLE_CALLING_PYTHON_SCRIPT = "case_sample_calling.py";
 
-    public static final String OUTPUT_CALLS_SUFFIX = "-calls";
+    public static final String MODEL_PATH_SUFFIX = "-model";
+    public static final String CALLS_PATH_SUFFIX = "-calls";
 
     public static final String CONTIG_PLOIDY_CALLS_DIRECTORY_LONG_NAME = "contigPloidyCalls";
     public static final String CONTIG_PLOIDY_CALLS_DIRECTORY_SHORT_NAME = "ploidyCalls";
@@ -295,7 +296,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         final List<String> arguments = new ArrayList<>(Arrays.asList(
                 "--modeling_interval_list=" + intervalsFile.getAbsolutePath(),  //these are the annotated intervals, if provided
                 "--ploidy_calls_path=" + inputContigPloidyCallsDir,
-                "--output_calls_path=" + outputDirArg + outputPrefix + OUTPUT_CALLS_SUFFIX));
+                "--output_calls_path=" + outputDirArg + outputPrefix + CALLS_PATH_SUFFIX));
         arguments.addAll(germlineDenoisingArgumentCollection.generatePythonArguments());
         arguments.addAll(germlineCallingArgumentCollection.generatePythonArguments());
 
@@ -309,7 +310,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         final String script;
         if (mode == Mode.COHORT) {
             script = COHORT_DENOISING_CALLING_PYTHON_SCRIPT;
-            arguments.add("--output_model_path=" + outputDirArg + outputPrefix);
+            arguments.add("--output_model_path=" + outputDirArg + outputPrefix + MODEL_PATH_SUFFIX);
             if (inputModelDir != null) {
                 arguments.add("--input_model_path=" + inputModelDir);
             }
