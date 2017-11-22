@@ -6,9 +6,11 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.ArgumentCollection;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
+import org.broadinstitute.hellbender.cmdline.CommandLineProgram;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
+import org.broadinstitute.hellbender.cmdline.argumentcollections.IntervalArgumentCollection;
+import org.broadinstitute.hellbender.cmdline.argumentcollections.OptionalIntervalArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGroup;
-import org.broadinstitute.hellbender.engine.GATKTool;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.copynumber.annotation.AnnotatedIntervalCollection;
 import org.broadinstitute.hellbender.tools.copynumber.coverage.readcount.SimpleCountCollection;
@@ -20,6 +22,7 @@ import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.io.Resource;
 import org.broadinstitute.hellbender.utils.python.PythonScriptExecutor;
+import org.broadinstitute.hellbender.utils.reference.ReferenceUtils;
 
 import java.io.File;
 import java.io.Serializable;
@@ -81,7 +84,7 @@ import java.util.stream.Collectors;
         programGroup = CopyNumberProgramGroup.class
 )
 @DocumentedFeature
-public final class GermlineCNVCaller extends GATKTool {
+public final class GermlineCNVCaller extends CommandLineProgram {
     private enum Mode {
         COHORT, CASE
     }
@@ -96,7 +99,8 @@ public final class GermlineCNVCaller extends GATKTool {
 
     @Argument(
             doc = "Input read-count files containing integer read counts in genomic intervals for all samples.  " +
-                    "Intervals must be identical and in the same order for all samples.  " +
+                    "All intervals specified via -L must be contained; " +
+                    "if none are specified, then intervals must be identical and in the same order for all samples.  " +
                     "If only a single sample is specified, a model directory must also be specified.  ",
             fullName = StandardArgumentDefinitions.INPUT_LONG_NAME,
             shortName = StandardArgumentDefinitions.INPUT_SHORT_NAME,
@@ -109,7 +113,7 @@ public final class GermlineCNVCaller extends GATKTool {
             fullName = CONTIG_PLOIDY_CALLS_DIRECTORY_LONG_NAME,
             shortName = CONTIG_PLOIDY_CALLS_DIRECTORY_SHORT_NAME
     )
-    private File inputContigPloidyCallsDir;
+    private String inputContigPloidyCallsDir;
 
     @Argument(
             doc = "Input denoising-model directory.  If only a single sample is specified, this model will be used.  " +
@@ -144,6 +148,17 @@ public final class GermlineCNVCaller extends GATKTool {
     )
     private String outputDir;
 
+    @Argument(
+            doc = "Use the given sequence dictionary as the master/canonical sequence dictionary.  Must be a .dict file.",
+            fullName = StandardArgumentDefinitions.SEQUENCE_DICTIONARY_NAME,
+            shortName = StandardArgumentDefinitions.SEQUENCE_DICTIONARY_NAME,
+            optional = true
+    )
+    private File sequenceDictionaryFile = null;
+
+    @ArgumentCollection
+    protected IntervalArgumentCollection intervalArgumentCollection = new OptionalIntervalArgumentCollection();
+
     @Advanced
     @ArgumentCollection
     private GermlineDenoisingArgumentCollection germlineDenoisingArgumentCollection = new GermlineDenoisingArgumentCollection();
@@ -156,7 +171,7 @@ public final class GermlineCNVCaller extends GATKTool {
     private LinkedHashSet<SimpleInterval> intervals;
 
     @Override
-    public void onTraversalStart() {
+    protected Object doWork() {
         setModeAndValidateArguments();
 
         //read in count files, validate they contain specified subset of intervals, and output count files for these intervals to temporary files
@@ -181,10 +196,9 @@ public final class GermlineCNVCaller extends GATKTool {
         }
 
         logger.info("Germline denoising and CNV calling complete.");
-    }
 
-    @Override
-    public void traverse() {}  // no traversal for this tool
+        return "SUCCESS";
+    }
 
     private void setModeAndValidateArguments() {
         inputReadCountFiles.forEach(IOUtils::canReadFile);
@@ -201,23 +215,31 @@ public final class GermlineCNVCaller extends GATKTool {
             Utils.validateArg(inputReadCountFiles.size() == new HashSet<>(inputReadCountFiles).size(),
                     "List of input read-count files cannot contain duplicates.");
 
-            final SAMSequenceDictionary sequenceDictionary = getBestAvailableSequenceDictionary();
-            CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection(intervalArgumentCollection);
-            intervals = hasIntervals()
-                    ? new LinkedHashSet<>(intervalArgumentCollection.getIntervals(sequenceDictionary))
-                    : getIntervalsFromFirstReadCountFile();
+            if (sequenceDictionaryFile != null && intervalArgumentCollection.intervalsSpecified()) {
+                final SAMSequenceDictionary sequenceDictionary = ReferenceUtils.loadFastaDictionary(sequenceDictionaryFile);
+                CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection(intervalArgumentCollection);
+                intervals = new LinkedHashSet<>(intervalArgumentCollection.getIntervals(sequenceDictionary));
+            } else if (sequenceDictionaryFile == null && !intervalArgumentCollection.intervalsSpecified()) {
+                intervals = getIntervalsFromFirstReadCountFile();
+            } else {
+                throw new UserException.BadInput("Invalid combination of inputs: Both sequence dictionary and intervals should be provided if only a subset of intervals is to be modeled, " +
+                        "or neither should be provided if all intervals are to be modeled.");
+            }
 
             if (inputAnnotatedIntervalsFile != null) {
                 IOUtils.canReadFile(inputAnnotatedIntervalsFile);
+                Utils.validateArg(new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile).getIntervals().containsAll(intervals),
+                        "Annotated-intervals file does not contain all specified intervals.");
             }
-            Utils.validateArg(new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile).getIntervals().containsAll(intervals),
-                    "Annotated-intervals file does not contain all specified intervals.");
-
         } else {
             logger.info("A single sample was provided, running in case mode...");
             mode = Mode.CASE;
 
-            if (hasIntervals()) {
+            if (sequenceDictionaryFile != null) {
+                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but sequence dictionary was provided.");
+            }
+
+            if (intervalArgumentCollection.intervalsSpecified()) {
                 throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but intervals were provided.");
             }
 
@@ -251,7 +273,7 @@ public final class GermlineCNVCaller extends GATKTool {
             final File inputReadCountFile = inputReadCountFilesIterator.next();
             logger.info(String.format("Aggregating read-count file %s (%d / %d)", inputReadCountFile, sampleIndex + 1, numSamples));
             final SimpleCountCollection readCounts = SimpleCountCollection.read(inputReadCountFile);
-            Utils.validateArg(readCounts.getIntervals().containsAll(intervals),
+            Utils.validateArg(new HashSet<>(readCounts.getIntervals()).containsAll(intervals),
                     String.format("Intervals for read-count file %s do not contain all specified intervals.", inputReadCountFile));
             final File intervalSubsetReadCountFile = IOUtils.createTempFile("sample-" + sampleIndex, ".tsv");
             new SimpleCountCollection(
@@ -272,15 +294,17 @@ public final class GermlineCNVCaller extends GATKTool {
         //add required arguments
         final List<String> arguments = new ArrayList<>(Arrays.asList(
                 "--modeling_interval_list=" + intervalsFile.getAbsolutePath(),  //these are the annotated intervals, if provided
-                "--ploidy_calls_path=" + inputContigPloidyCallsDir.getAbsolutePath(),
+                "--ploidy_calls_path=" + inputContigPloidyCallsDir,
                 "--output_calls_path=" + outputDirArg + outputPrefix + OUTPUT_CALLS_SUFFIX));
-        intervalSubsetReadCountFiles.forEach(f -> arguments.add("--read_count_tsv_files=" + f.getAbsolutePath()));
         arguments.addAll(germlineDenoisingArgumentCollection.generatePythonArguments());
         arguments.addAll(germlineCallingArgumentCollection.generatePythonArguments());
 
         if (inputAnnotatedIntervalsFile != null) {
             arguments.add("--enable_explicit_gc_bias_modeling True");
         }
+
+        arguments.add("--read_count_tsv_files");
+        arguments.addAll(intervalSubsetReadCountFiles.stream().map(File::getAbsolutePath).collect(Collectors.toList()));    //must follow addition of "--read_count_tsv_files"
 
         final String script;
         if (mode == Mode.COHORT) {
@@ -294,6 +318,7 @@ public final class GermlineCNVCaller extends GATKTool {
             script = CASE_SAMPLE_CALLING_PYTHON_SCRIPT;
             arguments.add("--input_model_path=" + inputModelDir);
         }
+        System.out.println(arguments.stream().collect(Collectors.joining(" ")));
         return executor.executeScript(
                 new Resource(script, GermlineCNVCaller.class),
                 null,
@@ -412,7 +437,7 @@ public final class GermlineCNVCaller extends GATKTool {
             return Arrays.asList(
                     String.format("--max_bias_factors=%d", maxBiasFactors),
                     String.format("--mapping_error_rate=%f", mappingErrorRate),
-                    String.format("--psi_i_scale=%f", intervalPsiScale),
+                    String.format("--psi_t_scale=%f", intervalPsiScale),
                     String.format("--psi_s_scale=%f", samplePsiScale),
                     String.format("--depth_correction_tau=%f", depthCorrectionTau),
                     String.format("--log_mean_bias_std=%f", logMeanBiasStandardDeviation),
