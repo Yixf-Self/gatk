@@ -77,26 +77,49 @@ class InferenceTask:
 
 
 class GeneralizedContinuousModel(Model):
+    SlicerType = Callable[[int, np.ndarray], np.ndarray]
+
     def __init__(self):
         self.approx: Optional[pm.MeanField] = None
         self.global_var_registry: Set[str] = set()
-        self.sample_specific_var_registry: Set[str] = set()
+        self.sample_specific_var_registry: Dict[str, self.SlicerType] = dict()
         super().__init__()
 
-    def register_as_global(self, var):
-        self._register(var, self.global_var_registry)
-
-    def register_as_sample_specific(self, var):
-        self._register(var, self.sample_specific_var_registry)
-
     @staticmethod
-    def _register(var, registry_set):
+    def _get_var_name(var) -> str:
         assert hasattr(var, 'name')
         name = var.name
         if hasattr(var, 'transformed'):
             name = var.transformed.name
-        assert name not in registry_set
-        registry_set.add(name)
+        return name
+
+    def _assert_var_is_unannotated(self, var):
+        name = self._get_var_name(var)
+        assert name not in self.sample_specific_var_registry, \
+            "Variable ({0}) is already registered as sample-specific".format(name)
+        assert name not in self.global_var_registry, \
+            "Variable ({0}) is already registered as global".format(name)
+
+    def register_as_global(self, var):
+        self._assert_var_is_unannotated(var)
+        name = self._get_var_name(var)
+        self.global_var_registry.add(name)
+
+    def register_as_sample_specific(self, var, slicer: 'GeneralizedContinuousModel.SlicerType'):
+        self._assert_var_is_unannotated(var)
+        name = self._get_var_name(var)
+        self.sample_specific_var_registry[name] = slicer
+
+    def verify_var_registry(self):
+        _logger.info("Global model variables: " + str(self.global_var_registry))
+        _logger.info("Sample-specific model variables: " + str(set(self.sample_specific_var_registry.keys())))
+        model_var_set = {self._get_var_name(var) for var in self.vars}
+        unannotated_vars = model_var_set\
+            .difference(self.global_var_registry)\
+            .difference(set(self.sample_specific_var_registry.keys()))
+        assert len(unannotated_vars) == 0,\
+            "The following model variables have not been registered " \
+            "either as global or sample-specific: {0}".format(unannotated_vars)
 
 
 class HybridInferenceTask(InferenceTask):
@@ -151,6 +174,7 @@ class HybridInferenceTask(InferenceTask):
 
         assert continuous_model is not None
         self.continuous_model = continuous_model
+        self.continuous_model.verify_var_registry()
 
         if sampler is None:
             _logger.warning("No discrete emission sampler given; skipping the sampling step")
@@ -284,7 +308,8 @@ class HybridInferenceTask(InferenceTask):
 
     def _premature_convergence(self):
         too_few_epochs = self.i_epoch < self.hybrid_inference_params.min_training_epochs
-        still_in_annealing = np.abs(self.temperature.get_value()[0] - 1) > self.temperature_tolerance
+        temperature_still_high = np.abs(self.temperature.get_value()[0] - 1) > self.temperature_tolerance
+        still_in_annealing = temperature_still_high and not self.hybrid_inference_params.disable_annealing
         return too_few_epochs or still_in_annealing
 
     def _create_param_tracker(self):
@@ -365,7 +390,7 @@ class HybridInferenceTask(InferenceTask):
                     if median_rel_err < self.hybrid_inference_params.log_emission_sampling_median_rel_error:
                         _logger.debug('{0} converged after {1} rounds with final '
                                       'median relative error {2:.3}.'.format(self.sampling_task_name, i_round + 1,
-                                                                            median_rel_err))
+                                                                             median_rel_err))
                         raise StopIteration
 
             except StopIteration:
@@ -505,8 +530,9 @@ class HybridInferenceParameters:
             assert self.param_tracker_config is not None
 
         if self.disable_annealing and self.initial_temperature > 1.0:
-            _logger.warning("Annealing is disabled but the initial temperature is > 1.0. This makes inferences "
-                            "in a thermal state. Ignore this warning if this run mode is intended.")
+            _logger.warning("The initial temperature ({0}) is above 1.0 and annealing is disabled. This run "
+                            "makes inferences in a thermal state. Ignore this warning if "
+                            "this setting is intended.".format(self.initial_temperature))
 
     @staticmethod
     def expose_args(args: argparse.ArgumentParser, override_default: Dict[str, Any] = None, hide: Set[str] = None):

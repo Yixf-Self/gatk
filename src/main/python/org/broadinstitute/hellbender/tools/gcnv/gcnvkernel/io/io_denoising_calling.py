@@ -32,8 +32,6 @@ class DenoisingModelExporter:
         self.denoising_model = denoising_model
         self.denoising_model_approx = denoising_model_approx
         self.output_path = output_path
-        (self._approx_var_set, self._approx_mu_map,
-         self._approx_std_map) = io_commons.extract_meanfield_posterior_parameters(self.denoising_model_approx)
 
     @staticmethod
     def _export_class_log_posterior(output_path, log_q_tau_tk):
@@ -67,16 +65,8 @@ class DenoisingModelExporter:
             self.output_path, self.denoising_calling_workspace.log_q_tau_tk.get_value(borrow=True))
 
         # export global variables in the posterior
-        for var_name in self.denoising_model.global_var_registry:
-            assert var_name in self._approx_var_set, \
-                "a variable named {0} does not exist in the approximation".format(var_name)
-            _logger.info("exporting {0}...".format(var_name))
-            var_mu = self._approx_mu_map[var_name]
-            var_std = self._approx_std_map[var_name]
-            var_mu_out_path = os.path.join(self.output_path, 'mu_' + var_name + '.tsv')
-            io_commons.write_ndarray_to_tsv(var_mu_out_path, var_mu)
-            var_std_out_path = os.path.join(self.output_path, 'std_' + var_name + '.tsv')
-            io_commons.write_ndarray_to_tsv(var_std_out_path, var_std)
+        io_commons.export_meanfield_global_params(
+            self.output_path, self.denoising_model_approx, self.denoising_model)
 
 
 class DenoisingModelImporter:
@@ -107,7 +97,8 @@ class DenoisingModelImporter:
             borrow=config.borrow_numpy)
 
         # import global posterior parameters
-        io_commons.import_global_posteriors(self.input_path, self.denoising_model_approx, self.denoising_model)
+        io_commons.import_meanfield_global_params(
+            self.input_path, self.denoising_model_approx, self.denoising_model)
 
 
 class SampleDenoisingAndCallingPosteriorsExporter:
@@ -127,13 +118,6 @@ class SampleDenoisingAndCallingPosteriorsExporter:
         self.sample_names = sample_names
         (self._approx_var_set, self._approx_mu_map,
          self._approx_std_map) = io_commons.extract_meanfield_posterior_parameters(self.denoising_model_approx)
-
-    _model_sample_specific_var_export_recipes = [
-        io_commons.ModelExportRecipe('read_depth_s_log__', 'log_read_depth', lambda si, array: array[si]),
-        io_commons.ModelExportRecipe('gamma_s_log__', 'log_sample_specific_variance', lambda si, array: array[si]),
-        io_commons.ModelExportRecipe('z_su', 'bias_factor_loadings', lambda si, array: array[si, ...]),
-        io_commons.ModelExportRecipe('z_sg', 'gc_bias_factor_loadings', lambda si, array: array[si, ...]),
-    ]
 
     @staticmethod
     def _export_sample_copy_number_log_posterior(sample_posterior_path: str,
@@ -170,13 +154,9 @@ class SampleDenoisingAndCallingPosteriorsExporter:
             io_commons.assert_output_path_writable(sample_posterior_path, try_creating_output_path=True)
 
             # export sample-specific posteriors in the approximation
-            io_commons.export_sample_specific_posteriors(si,
-                                                         sample_posterior_path,
-                                                         self._approx_var_set,
-                                                         self._approx_mu_map,
-                                                         self._approx_std_map,
-                                                         self._model_sample_specific_var_export_recipes,
-                                                         sample_name_comment_line)
+            io_commons.export_meanfield_sample_specific_params(
+                si, sample_posterior_path, self._approx_var_set, self._approx_mu_map, self._approx_std_map,
+                self.denoising_model, sample_name_comment_line)
 
             # export sample name
             self._export_sample_name(sample_posterior_path, sample_name)

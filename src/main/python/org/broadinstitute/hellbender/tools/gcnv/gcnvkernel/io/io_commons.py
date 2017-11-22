@@ -108,7 +108,7 @@ def read_ndarray_from_tsv(input_file: str, comment='#', delimiter='\t') -> np.nd
     return np.vstack(rows).reshape(make_tuple(shape))
 
 
-def get_var_map_list_from_approx(approx: pm.MeanField):
+def get_var_map_list_from_meanfield_approx(approx: pm.MeanField):
     if pm.__version__ == "3.1":
         return approx.gbij.ordering.vmap
     elif pm.__version__ == "3.2":
@@ -124,7 +124,7 @@ def extract_meanfield_posterior_parameters(approx: pm.MeanField)\
     mu_map = dict()
     std_map = dict()
     var_set = set()
-    for vmap in get_var_map_list_from_approx(approx):
+    for vmap in get_var_map_list_from_meanfield_approx(approx):
         var_set.add(vmap.var)
         mu_map[vmap.var] = mu_flat_view[vmap.slc].reshape(vmap.shp).astype(vmap.dtyp)
         std_map[vmap.var] = std_flat_view[vmap.slc].reshape(vmap.shp).astype(vmap.dtyp)
@@ -146,39 +146,58 @@ def check_gcnvkernel_version(gcnvkernel_version_json_file: str):
                             "risk!").format(imported_gcnvkernel_version, gcnvkernel_version)
 
 
-ModelExportRecipe = namedtuple('ModelExportRecipe', 'var_name, output_filename, slicer')
+def _get_mu_tsv_filename(path: str, var_name: str):
+    return os.path.join(path, "mu_" + var_name + ".tsv")
 
 
-def export_sample_specific_posteriors(sample_index: int,
-                                      sample_posterior_path: str,
-                                      approx_var_name_set: Set[str],
-                                      approx_mu_map: Dict[str, np.ndarray],
-                                      approx_std_map: Dict[str, np.ndarray],
-                                      export_recipes: List[ModelExportRecipe],
-                                      extra_comment_lines: Optional[List[str]] = None):
-    for var_name in approx_var_name_set:
-        for export_recipe in export_recipes:
-            if export_recipe.var_name == var_name:
-                mean_out_file_name = os.path.join(
-                    sample_posterior_path, export_recipe.output_filename + "_mean.tsv")
-                mean_array = export_recipe.slicer(sample_index, approx_mu_map[var_name])
-                write_ndarray_to_tsv(mean_out_file_name, mean_array,
-                                     extra_comment_lines=extra_comment_lines)
-
-                std_out_file_name = os.path.join(
-                    sample_posterior_path, export_recipe.output_filename + "_std.tsv")
-                std_array = export_recipe.slicer(sample_index, approx_std_map[var_name])
-                write_ndarray_to_tsv(std_out_file_name, std_array,
-                                     extra_comment_lines=extra_comment_lines)
-                break
+def _get_std_tsv_filename(path: str, var_name: str):
+    return os.path.join(path, "std_" + var_name + ".tsv")
 
 
-def import_global_posteriors(input_path: str,
-                             approx: pm.MeanField,
-                             model: GeneralizedContinuousModel):
+def export_meanfield_sample_specific_params(sample_index: int,
+                                            sample_posterior_path: str,
+                                            approx_var_name_set: Set[str],
+                                            approx_mu_map: Dict[str, np.ndarray],
+                                            approx_std_map: Dict[str, np.ndarray],
+                                            model: GeneralizedContinuousModel,
+                                            extra_comment_lines: Optional[List[str]] = None):
+    sample_specific_var_registry = model.sample_specific_var_registry
+    for var_name, slicer in sample_specific_var_registry.items():
+        assert var_name in approx_var_name_set, "A model variable named \"{0}\" could not be found in the " \
+                                                "meanfield posterior; cannot continue with exporting".format(var_name)
+        mu_out_file_name = _get_mu_tsv_filename(sample_posterior_path, var_name)
+        mu_slice = slicer(sample_index, approx_mu_map[var_name])
+        write_ndarray_to_tsv(mu_out_file_name, mu_slice, extra_comment_lines=extra_comment_lines)
+
+        std_out_file_name = _get_std_tsv_filename(sample_posterior_path, var_name)
+        std_slice = slicer(sample_index, approx_std_map[var_name])
+        write_ndarray_to_tsv(std_out_file_name, std_slice, extra_comment_lines=extra_comment_lines)
+
+
+def export_meanfield_global_params(output_path: str,
+                                   approx: pm.MeanField,
+                                   model: GeneralizedContinuousModel):
+    # parse meanfield posterior parameters
+    approx_var_set, approx_mu_map, approx_std_map = extract_meanfield_posterior_parameters(approx)
+
+    for var_name in model.global_var_registry:
+        assert var_name in approx_var_set, "A model variable named \"{0}\" could not be found in the " \
+                                           "meanfield posterior; cannot continue with exporting".format(var_name)
+        _logger.info("exporting {0}...".format(var_name))
+        var_mu = approx_mu_map[var_name]
+        var_mu_out_path = _get_mu_tsv_filename(output_path, var_name)
+        write_ndarray_to_tsv(var_mu_out_path, var_mu)
+
+        var_std = approx_std_map[var_name]
+        var_std_out_path = _get_std_tsv_filename(output_path, var_name)
+        write_ndarray_to_tsv(var_std_out_path, var_std)
+
+
+def import_meanfield_global_params(input_model_path: str,
+                                   approx: pm.MeanField,
+                                   model: GeneralizedContinuousModel):
     # import global posterior parameters
-    vmap_list = get_var_map_list_from_approx(approx)
-    model_var_set = {vmap.var for vmap in vmap_list}
+    vmap_list = get_var_map_list_from_meanfield_approx(approx)
 
     def _update_param_inplace(param, slc, dtype, new_value):
         param[slc] = new_value.astype(dtype).flatten()
@@ -188,14 +207,11 @@ def import_global_posteriors(input_path: str,
     model_rho = approx.params[1]
 
     for var_name in model.global_var_registry:
-        assert var_name in model_var_set,\
-            "A variable named \"{0}\" could not be found in the model variable map; cannot continue"
-        var_mu_input_file = os.path.join(input_path, 'mu_' + var_name + '.tsv')
-        var_std_input_file = os.path.join(input_path, 'std_' + var_name + '.tsv')
-        if not os.path.exists(var_mu_input_file) or not os.path.exists(var_std_input_file):
-            _logger.warning("Model parameter values for \"{0}\" could not be found in the provided model "
-                            "path; ignoring and proceeding...".format(var_name))
-            continue
+        var_mu_input_file = _get_mu_tsv_filename(input_model_path, var_name)
+        var_std_input_file = _get_std_tsv_filename(input_model_path, var_name)
+        assert os.path.exists(var_mu_input_file) and os.path.exists(var_std_input_file), \
+            "Model parameter values for \"{0}\" could not be found in the exported model path; " \
+            "cannot continue".format(var_name)
         _logger.info("Importing model parameter values for \"{0}\"...".format(var_name))
         var_mu = read_ndarray_from_tsv(var_mu_input_file)
         var_std = read_ndarray_from_tsv(var_std_input_file)
@@ -206,8 +222,12 @@ def import_global_posteriors(input_path: str,
 
         for vmap in vmap_list:
             if vmap.var == var_name:
-                assert var_mu.shape == vmap.shp
-                assert var_rho.shape == vmap.shp
+                assert var_mu.shape == vmap.shp,\
+                    "Loaded mean for \"{0}\" has a different shape ({1}) than the expected shape " \
+                    "({2}); cannot continue".format(var_name, var_mu.shape, vmap.shp)
+                assert var_std.shape == vmap.shp, \
+                    "Loaded std for \"{0}\" has a different shape ({1}) than the expected shape " \
+                    "({2}); cannot continue".format(var_name, var_std.shape, vmap.shp)
                 model_mu.set_value(_update_param_inplace(
                     model_mu.get_value(borrow=True), vmap.slc, vmap.dtyp, var_mu), borrow=True)
                 model_rho.set_value(_update_param_inplace(

@@ -561,7 +561,7 @@ class DenoisingModel(GeneralizedContinuousModel):
         psi_s = Exponential(name='psi_s', lam=1.0 / denoising_model_config.psi_s_scale,
                             shape=(shared_workspace.num_samples,),
                             broadcastable=(False,))
-        register_as_sample_specific(psi_s)
+        register_as_sample_specific(psi_s, lambda si, array: array[si])
 
         # convert "unexplained variance" to negative binomial over-dispersion
         alpha_st = tt.inv((tt.exp(psi_t.dimshuffle('x', 0) + psi_s.dimshuffle(0, 'x')) - 1.0))
@@ -582,7 +582,7 @@ class DenoisingModel(GeneralizedContinuousModel):
                                  shape=(shared_workspace.num_samples,),
                                  broadcastable=(False,),
                                  testval=shared_workspace.global_read_depth_s)
-        register_as_sample_specific(read_depth_s)
+        register_as_sample_specific(read_depth_s, lambda si, array: array[si])
 
         # log bias modelling, starting with the log mean bias
         log_bias_st = tt.tile(log_mean_bias_t, (shared_workspace.num_samples, 1))
@@ -605,7 +605,7 @@ class DenoisingModel(GeneralizedContinuousModel):
             z_su = Normal(name='z_su', mu=0.0, sd=1.0,
                           shape=(shared_workspace.num_samples, denoising_model_config.max_bias_factors),
                           broadcastable=(False, False))
-            register_as_sample_specific(z_su)
+            register_as_sample_specific(z_su, lambda si, array: array[si, :])
 
             # add contribution to total log bias
             if denoising_model_config.disable_bias_factors_in_flat_class:
@@ -620,7 +620,7 @@ class DenoisingModel(GeneralizedContinuousModel):
             z_sg = Normal(name='z_sg', mu=0.0, sd=denoising_model_config.gc_curve_sd,
                           shape=(shared_workspace.num_samples, denoising_model_config.num_gc_bins),
                           broadcastable=(False, False))
-            register_as_sample_specific(z_sg)
+            register_as_sample_specific(z_sg, lambda si, array: array[si, :])
 
             # add contribution to total log bias
             log_bias_st += tst.dot(shared_workspace.W_gc_tg, z_sg.T).T
@@ -915,8 +915,8 @@ class HHMMClassAndCopyNumberBasicCaller:
     def _update_flat_class_bitmask_t(self):
         if self.shared_workspace.denoising_config.q_c_expectation_mode == 'hybrid':
             _logger.debug("Updating flat class bitmask...")
-            flat_class_bitmask_t: np.ndarray = (self.shared_workspace.log_q_tau_tk.get_value(borrow=True)[:, 0]
-                                                < -np.log(2))
+            flat_class_bitmask_t: np.ndarray =\
+                self.shared_workspace.log_q_tau_tk.get_value(borrow=True)[:, 0] < -np.log(2)
             padded_flat_class_bitmask_t = np.zeros_like(flat_class_bitmask_t)
             for ti, neighbor_index_list in enumerate(self.shared_workspace.interval_neighbor_index_list):
                 padded_flat_class_bitmask_t[ti] = np.any(flat_class_bitmask_t[neighbor_index_list])

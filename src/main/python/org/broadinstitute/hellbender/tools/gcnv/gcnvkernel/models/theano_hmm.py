@@ -94,7 +94,8 @@ class TheanoForwardBackward:
         :return: tuple of (log_posterior_probs, log_data_likelihood)
         """
 
-        def calculate_next_alpha(c_log_trans_mat: types.TheanoMatrix, c_log_emission_vec: types.TheanoVector,
+        def calculate_next_alpha(c_log_trans_mat: types.TheanoMatrix,
+                                 c_log_emission_vec: types.TheanoVector,
                                  p_alpha_vec: types.TheanoVector):
             """ Calculates the next entry on the forward table, alpha(t), from alpha(t-1)
             :param c_log_trans_mat: a 2d tensor with rows and columns corresponding to log transition probability
@@ -111,7 +112,8 @@ class TheanoForwardBackward:
             else:
                 return n_alpha_vec
 
-        def calculate_prev_beta(n_log_trans_mat: types.TheanoMatrix, n_log_emission_vec: types.TheanoVector,
+        def calculate_prev_beta(n_log_trans_mat: types.TheanoMatrix,
+                                n_log_emission_vec: types.TheanoVector,
                                 n_beta_vec: types.TheanoVector):
             """ Calculates the previous entry on the backward table, beta(t-1), from beta(t)
             :param n_log_trans_mat: a 2d tensor with rows and columns corresponding to log transition probability
@@ -128,13 +130,16 @@ class TheanoForwardBackward:
             else:
                 return p_beta_vec
 
+        # thermodynamic beta
+        inv_temperature = tt.inv(temperature)
+
         # first entry of the forward table
-        alpha_first = log_prior_c + log_emission_tc[0, :]
+        alpha_first = inv_temperature * (log_prior_c + log_emission_tc[0, :])
 
         # the rest of the forward table
         alpha_outputs, alpha_updates = th.scan(
             fn=calculate_next_alpha,
-            sequences=[log_trans_tcc, log_emission_tc[1:, :]],
+            sequences=[inv_temperature * log_trans_tcc, inv_temperature * log_emission_tc[1:, :]],
             outputs_info=[alpha_first])
 
         # concatenate with the first alpha
@@ -146,13 +151,15 @@ class TheanoForwardBackward:
         # the rest of the backward table
         beta_outputs, beta_updates = th.scan(
             fn=calculate_prev_beta,
-            sequences=[log_trans_tcc, log_emission_tc[1:, :]],
+            sequences=[inv_temperature * log_trans_tcc, inv_temperature * log_emission_tc[1:, :]],
             go_backwards=True,
             outputs_info=[beta_last])
 
         # concatenate with the last beta and reverse
         beta_full_outputs = tt.concatenate((beta_last.dimshuffle('x', 0), beta_outputs))[::-1, :]
-        log_unnormalized_posterior_probs = tt.inv(temperature) * (alpha_full_outputs + beta_full_outputs)
+
+        # calculate normalized log posterior
+        log_unnormalized_posterior_probs = alpha_full_outputs + beta_full_outputs
         log_data_likelihood = pm.math.logsumexp(log_unnormalized_posterior_probs, axis=1)
         log_posterior_probs = log_unnormalized_posterior_probs - log_data_likelihood
 

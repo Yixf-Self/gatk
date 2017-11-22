@@ -228,7 +228,7 @@ class PloidyModel(GeneralizedContinuousModel):
         psi_s = Exponential(name='psi_s',
                             lam=1.0 / ploidy_config.psi_j_scale,
                             shape=(ploidy_workspace.num_samples,))
-        register_as_sample_specific(psi_s)
+        register_as_sample_specific(psi_s, lambda si, array: array[si])
 
         # convert "unexplained variance" to negative binomial over-dispersion
         alpha_sj = tt.inv((tt.exp(psi_j.dimshuffle('x', 0) + psi_s.dimshuffle(0, 'x')) - 1.0))

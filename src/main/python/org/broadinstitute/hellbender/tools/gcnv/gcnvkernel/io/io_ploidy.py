@@ -75,10 +75,6 @@ class SamplePloidyExporter:
         (self._approx_var_set, self._approx_mu_map,
          self._approx_std_map) = io_commons.extract_meanfield_posterior_parameters(self.ploidy_model_approx)
 
-    _model_sample_specific_var_export_recipes = [
-        io_commons.ModelExportRecipe('psi_s_log__', 'log_sample_specific_variance', lambda si, array: array[si])
-    ]
-
     @staticmethod
     def _export_sample_name(sample_posterior_path: str,
                             sample_name: str):
@@ -156,13 +152,9 @@ class SamplePloidyExporter:
             self._export_sample_name(sample_posterior_path, sample_name)
 
             # export sample-specific posteriors in the approximation
-            io_commons.export_sample_specific_posteriors(si,
-                                                         sample_posterior_path,
-                                                         self._approx_var_set,
-                                                         self._approx_mu_map,
-                                                         self._approx_std_map,
-                                                         self._model_sample_specific_var_export_recipes,
-                                                         sample_name_comment_line)
+            io_commons.export_meanfield_sample_specific_params(
+                si, sample_posterior_path, self._approx_var_set, self._approx_mu_map, self._approx_std_map,
+                self.ploidy_model, sample_name_comment_line)
 
 
 class PloidyModelImporter:
@@ -179,4 +171,4 @@ class PloidyModelImporter:
         self.input_path = input_path
 
     def __call__(self):
-        io_commons.import_global_posteriors(self.input_path, self.ploidy_model_approx, self.ploidy_model)
+        io_commons.import_meanfield_global_params(self.input_path, self.ploidy_model_approx, self.ploidy_model)
