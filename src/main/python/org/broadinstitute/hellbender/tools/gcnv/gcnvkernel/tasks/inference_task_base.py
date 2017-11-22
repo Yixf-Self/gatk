@@ -8,12 +8,12 @@ import logging
 import time
 import tqdm
 import argparse
-from pymc3 import Model
+from .. models.fancy_model import GeneralizedContinuousModel
 from typing import List, Callable, Optional, Set, Tuple, Any, Dict
 from abc import abstractmethod
 from ..inference.covergence_tracker import NoisyELBOConvergenceTracker
 from ..inference.param_tracker import ParamTrackerConfig, ParamTracker
-from ..inference.sample_specific_opt import SampleSpecificOptimizer
+from ..inference.fancy_optimizers import FancyStochasticOptimizer
 from ..inference.deterministic_annealing import ADVIDeterministicAnnealing
 from .. import types
 
@@ -74,52 +74,6 @@ class InferenceTask:
     @abstractmethod
     def disengage(self):
         raise NotImplementedError
-
-
-class GeneralizedContinuousModel(Model):
-    SlicerType = Callable[[int, np.ndarray], np.ndarray]
-
-    def __init__(self):
-        self.approx: Optional[pm.MeanField] = None
-        self.global_var_registry: Set[str] = set()
-        self.sample_specific_var_registry: Dict[str, self.SlicerType] = dict()
-        super().__init__()
-
-    @staticmethod
-    def _get_var_name(var) -> str:
-        assert hasattr(var, 'name')
-        name = var.name
-        if hasattr(var, 'transformed'):
-            name = var.transformed.name
-        return name
-
-    def _assert_var_is_unannotated(self, var):
-        name = self._get_var_name(var)
-        assert name not in self.sample_specific_var_registry, \
-            "Variable ({0}) is already registered as sample-specific".format(name)
-        assert name not in self.global_var_registry, \
-            "Variable ({0}) is already registered as global".format(name)
-
-    def register_as_global(self, var):
-        self._assert_var_is_unannotated(var)
-        name = self._get_var_name(var)
-        self.global_var_registry.add(name)
-
-    def register_as_sample_specific(self, var, slicer: 'GeneralizedContinuousModel.SlicerType'):
-        self._assert_var_is_unannotated(var)
-        name = self._get_var_name(var)
-        self.sample_specific_var_registry[name] = slicer
-
-    def verify_var_registry(self):
-        _logger.info("Global model variables: " + str(self.global_var_registry))
-        _logger.info("Sample-specific model variables: " + str(set(self.sample_specific_var_registry.keys())))
-        model_var_set = {self._get_var_name(var) for var in self.vars}
-        unannotated_vars = model_var_set\
-            .difference(self.global_var_registry)\
-            .difference(set(self.sample_specific_var_registry.keys()))
-        assert len(unannotated_vars) == 0,\
-            "The following model variables have not been registered " \
-            "either as global or sample-specific: {0}".format(unannotated_vars)
 
 
 class HybridInferenceTask(InferenceTask):
@@ -219,7 +173,8 @@ class HybridInferenceTask(InferenceTask):
             self.continuous_model_approx: pm.MeanField = self.continuous_model_advi.approx
             if 'custom_optimizer' in kwargs.keys():
                 opt = kwargs['custom_optimizer']
-                assert issubclass(type(opt), SampleSpecificOptimizer)
+                assert issubclass(type(opt), FancyStochasticOptimizer)
+                self.continuous_model_opt_base_class = opt
                 self.continuous_model_opt = opt.get_opt(self.continuous_model, self.continuous_model_approx)
             else:
                 self.continuous_model_opt = pm.adamax(

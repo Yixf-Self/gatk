@@ -10,6 +10,8 @@ import shutil
 import json
 from typing import Dict, Any
 
+logger = logging.getLogger(__name__)
+
 parser = argparse.ArgumentParser(description="gCNV case calling tool based on a previously trained model",
                                  formatter_class=gcnvkernel.cli_commons.GCNVHelpFormatter)
 
@@ -43,6 +45,12 @@ group.add_argument("--output_calls_path",
                    required=True,
                    default=argparse.SUPPRESS,
                    help="Output path to write CNV calls")
+
+group.add_argument("--input_calls_path",
+                   type=str,
+                   required=False,
+                   default=argparse.SUPPRESS,
+                   help="Path to previously obtained calls to take as starting point")
 
 # add denoising config args
 # Note: we are hiding parameters that are either set by the model or are irrelevant to the case calling task
@@ -182,6 +190,12 @@ if __name__ == "__main__":
     task = gcnvkernel.CaseDenoisingCallingTask(
         denoising_config, calling_config, inference_params,
         shared_workspace, initial_params_supplier, args.input_model_path)
+
+    if hasattr(args, 'input_calls_path'):
+        logger.info("A call path was provided to use as starting point...")
+        gcnvkernel.io_denoising_calling.SampleDenoisingAndCallingPosteriorsImporter(
+            shared_workspace, task.continuous_model, task.continuous_model_approx,
+            args.input_calls_path)()
 
     # go!
     task.engage()

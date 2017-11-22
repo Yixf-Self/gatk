@@ -44,7 +44,7 @@ def load_interval_list_tsv_file(interval_list_tsv_file: str) -> List[Interval]:
 
 
 def load_counts_in_the_modeling_zone(read_count_file_list: List[str],
-                                     modeling_interval_list: List[Interval]):
+                                     modeling_interval_list: List[Interval]) -> Tuple[List[str], np.ndarray]:
     """ Note: it is assumed that all read counts have the same intervals; this is not asserted for speed """
     num_intervals = len(modeling_interval_list)
     num_samples = len(read_count_file_list)

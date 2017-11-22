@@ -55,7 +55,7 @@ class SampleCoverageMetadata:
 
         # total count
         self.n_total = np.sum(self.n_j)
-        self._contig_map: Dict[str, int] = {contig: j for j, contig in enumerate(contig_list)}
+        self._contig_map = {contig: j for j, contig in enumerate(contig_list)}
 
     def _assert_contig_exists(self, contig: str):
         assert contig in self._contig_map, \

@@ -10,8 +10,7 @@ import re
 
 from .._version import __version__ as gcnvkernel_version
 from . import io_consts
-from ..tasks.inference_task_base import GeneralizedContinuousModel
-from collections import namedtuple
+from ..models.fancy_model import GeneralizedContinuousModel
 
 _logger = logging.getLogger(__name__)
 
@@ -27,6 +26,15 @@ def extract_sample_name_from_header(input_file: str,
             groups = match.groups()
             return groups[0]
     raise Exception("Sample name could not be found in \"{0}\"".format(input_file))
+
+
+def get_sample_name_from_txt_file(input_path: str) -> str:
+    sample_name_file = os.path.join(input_path, io_consts.default_sample_name_txt_filename)
+    assert os.path.exists(sample_name_file), \
+        "Sample name .txt file could not be found in \"{0}\"".format(input_path)
+    with open(sample_name_file, 'r') as f:
+        for line in f:
+            return line.strip()
 
 
 def assert_output_path_writable(output_path: str, try_creating_output_path: bool = True):
@@ -141,9 +149,9 @@ def check_gcnvkernel_version(gcnvkernel_version_json_file: str):
     with open(gcnvkernel_version_json_file, 'r') as fp:
         imported_gcnvkernel_version = json.load(fp)['version']
         if imported_gcnvkernel_version != gcnvkernel_version:
-            _logger.warning("The exported model is created with a different gcnvkernel version {exported: (0}, "
-                            "current: {1}\"; backwards compatibility is not guaranteed; proceed at your own "
-                            "risk!").format(imported_gcnvkernel_version, gcnvkernel_version)
+            _logger.warning("The exported model is created with a different gcnvkernel version (exported: {0}, "
+                            "current: {1}); backwards compatibility is not guaranteed; proceed at your own "
+                            "risk!".format(imported_gcnvkernel_version, gcnvkernel_version))
 
 
 def _get_mu_tsv_filename(path: str, var_name: str):
@@ -154,6 +162,12 @@ def _get_std_tsv_filename(path: str, var_name: str):
     return os.path.join(path, "std_" + var_name + ".tsv")
 
 
+def get_ndarray_singleton_slice_along_axis(array: np.ndarray, axis: int, index: int):
+    slc = [slice(None)] * array.ndim
+    slc[axis] = index
+    return slc
+
+
 def export_meanfield_sample_specific_params(sample_index: int,
                                             sample_posterior_path: str,
                                             approx_var_name_set: Set[str],
@@ -162,15 +176,18 @@ def export_meanfield_sample_specific_params(sample_index: int,
                                             model: GeneralizedContinuousModel,
                                             extra_comment_lines: Optional[List[str]] = None):
     sample_specific_var_registry = model.sample_specific_var_registry
-    for var_name, slicer in sample_specific_var_registry.items():
+    for var_name, var_sample_axis in sample_specific_var_registry.items():
         assert var_name in approx_var_name_set, "A model variable named \"{0}\" could not be found in the " \
                                                 "meanfield posterior; cannot continue with exporting".format(var_name)
+        mu_all = approx_mu_map[var_name]
+        std_all = approx_std_map[var_name]
+        mu_slice = mu_all[get_ndarray_singleton_slice_along_axis(mu_all, var_sample_axis, sample_index)]
+        std_slice = std_all[get_ndarray_singleton_slice_along_axis(mu_all, var_sample_axis, sample_index)]
+
         mu_out_file_name = _get_mu_tsv_filename(sample_posterior_path, var_name)
-        mu_slice = slicer(sample_index, approx_mu_map[var_name])
         write_ndarray_to_tsv(mu_out_file_name, mu_slice, extra_comment_lines=extra_comment_lines)
 
         std_out_file_name = _get_std_tsv_filename(sample_posterior_path, var_name)
-        std_slice = slicer(sample_index, approx_std_map[var_name])
         write_ndarray_to_tsv(std_out_file_name, std_slice, extra_comment_lines=extra_comment_lines)
 
 
@@ -196,7 +213,6 @@ def export_meanfield_global_params(output_path: str,
 def import_meanfield_global_params(input_model_path: str,
                                    approx: pm.MeanField,
                                    model: GeneralizedContinuousModel):
-    # import global posterior parameters
     vmap_list = get_var_map_list_from_meanfield_approx(approx)
 
     def _update_param_inplace(param, slc, dtype, new_value):
@@ -225,10 +241,56 @@ def import_meanfield_global_params(input_model_path: str,
                 assert var_mu.shape == vmap.shp,\
                     "Loaded mean for \"{0}\" has a different shape ({1}) than the expected shape " \
                     "({2}); cannot continue".format(var_name, var_mu.shape, vmap.shp)
-                assert var_std.shape == vmap.shp, \
+                assert var_rho.shape == vmap.shp, \
                     "Loaded std for \"{0}\" has a different shape ({1}) than the expected shape " \
                     "({2}); cannot continue".format(var_name, var_std.shape, vmap.shp)
                 model_mu.set_value(_update_param_inplace(
                     model_mu.get_value(borrow=True), vmap.slc, vmap.dtyp, var_mu), borrow=True)
                 model_rho.set_value(_update_param_inplace(
                     model_rho.get_value(borrow=True), vmap.slc, vmap.dtyp, var_rho), borrow=True)
+
+
+def import_meanfield_sample_specific_params(input_sample_calls_path: str,
+                                            sample_index: int,
+                                            approx: pm.MeanField,
+                                            model: GeneralizedContinuousModel):
+    vmap_list = get_var_map_list_from_meanfield_approx(approx)
+
+    def _update_param_inplace(_param: np.ndarray,
+                              _var_slice: slice,
+                              _var_shape: Tuple,
+                              _sample_specific_imported_value: np.ndarray,
+                              _var_sample_axis: int,
+                              _sample_index: int) -> np.ndarray:
+        sample_specific_var = _param[_var_slice].reshape(_var_shape)
+        sample_specific_var[get_ndarray_singleton_slice_along_axis(
+            sample_specific_var, _var_sample_axis, _sample_index)] = _sample_specific_imported_value[:]
+        return _param
+
+    # reference to meanfield posterior mu and rho
+    model_mu = approx.params[0]
+    model_rho = approx.params[1]
+
+    for var_name, var_sample_axis in model.sample_specific_var_registry.items():
+        var_mu_input_file = _get_mu_tsv_filename(input_sample_calls_path, var_name)
+        var_std_input_file = _get_std_tsv_filename(input_sample_calls_path, var_name)
+        assert os.path.exists(var_mu_input_file) and os.path.exists(var_std_input_file), \
+            "Model parameter values for \"{0}\" could not be found in the calls path; " \
+            "cannot continue importing".format(var_name)
+
+        var_mu = read_ndarray_from_tsv(var_mu_input_file)
+        var_std = read_ndarray_from_tsv(var_std_input_file)
+
+        # convert std to rho, see pymc3.dist_math.sd2rho
+        var_rho = np.log(np.exp(var_std) - 1)
+        del var_std
+
+        # update mu and rho
+        for vmap in vmap_list:
+            if vmap.var == var_name:
+                model_mu.set_value(_update_param_inplace(
+                    model_mu.get_value(borrow=True), vmap.slc, vmap.shp, var_mu,
+                    var_sample_axis, sample_index), borrow=True)
+                model_rho.set_value(_update_param_inplace(
+                    model_rho.get_value(borrow=True), vmap.slc, vmap.shp, var_rho,
+                    var_sample_axis, sample_index), borrow=True)

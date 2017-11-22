@@ -2,7 +2,7 @@ import logging
 
 from .inference_task_base import HybridInferenceTask, HybridInferenceParameters
 from ..models.model_ploidy import PloidyModelConfig, PloidyModel, PloidyWorkspace
-from ..inference.sample_specific_opt import SampleSpecificAdamax
+from ..inference.fancy_optimizers import FancyAdamax
 from ..io.io_ploidy import PloidyModelImporter
 
 _logger = logging.getLogger(__name__)
@@ -27,9 +27,10 @@ class CasePloidyInferenceTask(HybridInferenceTask):
         ploidy_caller = PloidyCaller(hybrid_inference_params, ploidy_workspace)
 
         elbo_normalization_factor = ploidy_workspace.num_samples * ploidy_workspace.num_contigs
-        opt = SampleSpecificAdamax(hybrid_inference_params.learning_rate,
-                                   hybrid_inference_params.adamax_beta1,
-                                   hybrid_inference_params.adamax_beta2)
+        opt = FancyAdamax(learning_rate=hybrid_inference_params.learning_rate,
+                          beta1=hybrid_inference_params.adamax_beta1,
+                          beta2=hybrid_inference_params.adamax_beta2,
+                          sample_specific=True)
 
         super().__init__(hybrid_inference_params, ploidy_model, ploidy_emission_sampler, ploidy_caller,
                          elbo_normalization_factor=elbo_normalization_factor,

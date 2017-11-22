@@ -9,6 +9,7 @@ from .. import config, types
 from ..models.model_denoising_calling import DenoisingModel, DenoisingModelConfig,\
     CopyNumberEmissionBasicSampler, InitialModelParametersSupplier,\
     DenoisingCallingWorkspace, CopyNumberCallingConfig, HHMMClassAndCopyNumberBasicCaller
+from ..inference.fancy_optimizers import FancyAdamax
 
 _logger = logging.getLogger(__name__)
 
@@ -124,11 +125,16 @@ class CohortDenoisingAndCallingTask(HybridInferenceTask):
                 calling_config, hybrid_inference_params, shared_workspace, self.temperature)
 
         elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_intervals
+        opt = FancyAdamax(learning_rate=hybrid_inference_params.learning_rate,
+                          beta1=hybrid_inference_params.adamax_beta1,
+                          beta2=hybrid_inference_params.adamax_beta2,
+                          sample_specific=False)
 
         super().__init__(hybrid_inference_params, denoising_model, copy_number_emission_sampler, copy_number_caller,
                          elbo_normalization_factor=elbo_normalization_factor,
                          advi_task_name="denoising",
-                         calling_task_name="CNV calling")
+                         calling_task_name="CNV calling",
+                         custom_optimizer=opt)
 
     def disengage(self):
         pass

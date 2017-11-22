@@ -67,14 +67,6 @@ def update_sample_metadata_collection_from_ploidy_determination_calls(
         comment='#',
         delimiter='\t'):
 
-    def get_sample_name(input_path: str) -> str:
-        sample_name_file = os.path.join(input_path, io_consts.default_sample_name_txt_filename)
-        assert os.path.exists(sample_name_file), \
-            "Sample name could not be found in the ploidy results located at \"{0}\"".format(input_path)
-        with open(sample_name_file, 'r') as f:
-            for line in f:
-                return line.strip()
-
     def get_sample_read_depth_metadata(input_path: str) -> SampleReadDepthMetadata:
         sample_read_depth_file = os.path.join(input_path, io_consts.default_sample_read_depth_tsv_filename)
         assert os.path.exists(sample_read_depth_file), \
@@ -114,7 +106,7 @@ def update_sample_metadata_collection_from_ploidy_determination_calls(
     for subdir in subdirs:
         if subdir.find(io_consts.sample_folder_prefix) >= 0:
             sample_ploidy_results_dir = os.path.join(input_calls_path, subdir)
-            sample_name = get_sample_name(sample_ploidy_results_dir)
+            sample_name = io_commons.get_sample_name_from_txt_file(sample_ploidy_results_dir)
             sample_read_depth_metadata = get_sample_read_depth_metadata(sample_ploidy_results_dir)
             sample_ploidy_metadata = get_sample_ploidy_metadata(sample_ploidy_results_dir)
             assert sample_read_depth_metadata.sample_name == sample_name, \

@@ -8,6 +8,7 @@ from .inference_task_base import Sampler, Caller, CallerUpdateSummary,\
 from .. import config, types
 from ..models.model_ploidy import PloidyModelConfig, PloidyModel,\
     PloidyWorkspace, PloidyEmissionBasicSampler, PloidyBasicCaller
+from ..inference.fancy_optimizers import FancyAdamax
 
 _logger = logging.getLogger(__name__)
 
@@ -89,11 +90,16 @@ class CohortPloidyInferenceTask(HybridInferenceTask):
         ploidy_caller = PloidyCaller(hybrid_inference_params, ploidy_workspace)
 
         elbo_normalization_factor = ploidy_workspace.num_samples * ploidy_workspace.num_contigs
+        opt = FancyAdamax(learning_rate=hybrid_inference_params.learning_rate,
+                          beta1=hybrid_inference_params.adamax_beta1,
+                          beta2=hybrid_inference_params.adamax_beta2,
+                          sample_specific=False)
 
         super().__init__(hybrid_inference_params, ploidy_model, ploidy_emission_sampler, ploidy_caller,
                          elbo_normalization_factor=elbo_normalization_factor,
                          advi_task_name="denoising",
-                         calling_task_name="ploidy calling")
+                         calling_task_name="ploidy calling",
+                         custom_optimizer=opt)
 
         self.ploidy_config = ploidy_config
         self.ploidy_workspace = ploidy_workspace

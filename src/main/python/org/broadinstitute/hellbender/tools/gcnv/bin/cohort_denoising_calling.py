@@ -50,6 +50,18 @@ group.add_argument("--output_calls_path",
                    default=argparse.SUPPRESS,
                    help="Output path to write CNV calls")
 
+group.add_argument("--input_model_path",
+                   type=str,
+                   required=False,
+                   default=argparse.SUPPRESS,
+                   help="Path to previously obtained model parameters to take as starting point")
+
+group.add_argument("--input_calls_path",
+                   type=str,
+                   required=False,
+                   default=argparse.SUPPRESS,
+                   help="Path to previously obtained calls to take as starting point")
+
 # add denoising config args
 gcnvkernel.DenoisingModelConfig.expose_args(parser)
 
@@ -116,6 +128,18 @@ if __name__ == "__main__":
     task = gcnvkernel.CohortDenoisingAndCallingTask(
         denoising_config, calling_config, inference_params,
         shared_workspace, initial_params_supplier)
+
+    if hasattr(args, 'input_model_path'):
+        logger.info("A model path was provided to use as starting point...")
+        gcnvkernel.io_denoising_calling.DenoisingModelImporter(
+            denoising_config, calling_config, shared_workspace, task.continuous_model,
+            task.continuous_model_approx, args.input_model_path)()
+
+    if hasattr(args, 'input_calls_path'):
+        logger.info("A call path was provided to use as starting point...")
+        gcnvkernel.io_denoising_calling.SampleDenoisingAndCallingPosteriorsImporter(
+            shared_workspace, task.continuous_model, task.continuous_model_approx,
+            args.input_calls_path)()
 
     # go!
     task.engage()

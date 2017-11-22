@@ -13,7 +13,8 @@ import theano.sparse as tst
 import theano.tensor as tt
 from pymc3 import Normal, Deterministic, DensityDist, Lognormal, Exponential
 
-from ..tasks.inference_task_base import HybridInferenceParameters, GeneralizedContinuousModel
+from ..tasks.inference_task_base import HybridInferenceParameters
+from .fancy_model import GeneralizedContinuousModel
 from . import commons
 from .dists import HalfFlat
 from .theano_hmm import TheanoForwardBackward
@@ -280,7 +281,6 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
         # copy number log posterior probs
         log_q_c_stc = np.zeros((shared_workspace.num_samples, shared_workspace.num_intervals,
                                 calling_config.num_copy_number_states), dtype=types.floatX)
-        c_map_st = np.zeros((shared_workspace.num_samples, shared_workspace.num_intervals), dtype=np.int)
 
         log_p_alt = np.log(calling_config.p_alt)
         log_p_baseline = np.log(1.0 - calling_config.max_copy_number * calling_config.p_alt)
@@ -288,18 +288,7 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
             sample_baseline_copy_number = shared_workspace.baseline_copy_number_s[si]
             log_q_c_stc[si, :, :] = log_p_alt
             log_q_c_stc[si, :, sample_baseline_copy_number] = log_p_baseline
-            c_map_st[si, :] = sample_baseline_copy_number
-
         shared_workspace.log_q_c_stc = th.shared(log_q_c_stc, name="log_q_c_stc", borrow=config.borrow_numpy)
-        shared_workspace.c_map_st = th.shared(c_map_st, name="c_map_st", borrow=config.borrow_numpy)
-
-        if denoising_config.q_c_expectation_mode == 'hybrid':
-            # bitmask for intervals of which the probability of being in the silent class is below 0.5
-            flat_class_bitmask_t = log_q_tau_tk[:, 0] < -np.log(2)
-            shared_workspace.flat_class_bitmask_t = th.shared(flat_class_bitmask_t, name="flat_class_bitmask_t",
-                                                              borrow=config.borrow_numpy)
-        else:
-            shared_workspace.flat_class_bitmask_t = None
 
 
 class DenoisingCallingWorkspace:
@@ -364,7 +353,7 @@ class DenoisingCallingWorkspace:
         # latest MAP estimate of integer copy number (updated by HHMMClassAndCopyNumberCaller)
         self.c_map_st: types.TensorSharedVariable = None
 
-        # latest bitmask of flat intervals (updated by HHMMClassAndCopyNumberCaller if q_c_expectation_mode == 'hybrid')
+        # latest bitmask of flat intervals (initialized and updated if q_c_expectation_mode == 'hybrid')
         self.flat_class_bitmask_t: types.TensorSharedVariable = None
 
         # copy number emission log posterior
@@ -421,6 +410,34 @@ class DenoisingCallingWorkspace:
 
         # initialize posterior
         posterior_initializer.initialize_posterior(denoising_config, calling_config, self)
+
+        # update auxiliary variables
+        self.update_auxiliary_vars()
+
+    def update_auxiliary_vars(self):
+        if self.c_map_st is None:
+            c_map_st = np.zeros((self.num_samples, self.num_intervals), dtype=types.small_uint)
+            self.c_map_st = th.shared(c_map_st, name="c_map_st", borrow=config.borrow_numpy)
+        # MAP copy number call
+        self.c_map_st.set_value(
+            np.argmax(self.log_q_c_stc.get_value(borrow=True), axis=2).astype(types.small_uint),
+            borrow=config.borrow_numpy)
+
+        if self.denoising_config.q_c_expectation_mode == 'hybrid':
+            _logger.debug("Updating flat class bitmask...")
+            if self.flat_class_bitmask_t is None:
+                flat_class_bitmask_t = np.zeros((self.num_intervals,), dtype=bool)
+                self.flat_class_bitmask_t = th.shared(
+                    flat_class_bitmask_t, name="flat_class_bitmask_t", borrow=config.borrow_numpy)
+
+            # bitmask for intervals of which the probability of being in the silent class is below 0.5
+            flat_class_bitmask_t: np.ndarray = \
+                self.log_q_tau_tk.get_value(borrow=True)[:, 0] < -np.log(2)
+            padded_flat_class_bitmask_t = np.zeros_like(flat_class_bitmask_t)
+            for ti, neighbor_index_list in enumerate(self.interval_neighbor_index_list):
+                padded_flat_class_bitmask_t[ti] = np.any(flat_class_bitmask_t[neighbor_index_list])
+            self.flat_class_bitmask_t.set_value(
+                padded_flat_class_bitmask_t, borrow=config.borrow_numpy)
 
     @staticmethod
     def _get_interval_neighbor_index_list(interval_list: List[Interval],
@@ -561,7 +578,7 @@ class DenoisingModel(GeneralizedContinuousModel):
         psi_s = Exponential(name='psi_s', lam=1.0 / denoising_model_config.psi_s_scale,
                             shape=(shared_workspace.num_samples,),
                             broadcastable=(False,))
-        register_as_sample_specific(psi_s, lambda si, array: array[si])
+        register_as_sample_specific(psi_s, sample_axis=0)
 
         # convert "unexplained variance" to negative binomial over-dispersion
         alpha_st = tt.inv((tt.exp(psi_t.dimshuffle('x', 0) + psi_s.dimshuffle(0, 'x')) - 1.0))
@@ -582,7 +599,7 @@ class DenoisingModel(GeneralizedContinuousModel):
                                  shape=(shared_workspace.num_samples,),
                                  broadcastable=(False,),
                                  testval=shared_workspace.global_read_depth_s)
-        register_as_sample_specific(read_depth_s, lambda si, array: array[si])
+        register_as_sample_specific(read_depth_s, sample_axis=0)
 
         # log bias modelling, starting with the log mean bias
         log_bias_st = tt.tile(log_mean_bias_t, (shared_workspace.num_samples, 1))
@@ -605,7 +622,7 @@ class DenoisingModel(GeneralizedContinuousModel):
             z_su = Normal(name='z_su', mu=0.0, sd=1.0,
                           shape=(shared_workspace.num_samples, denoising_model_config.max_bias_factors),
                           broadcastable=(False, False))
-            register_as_sample_specific(z_su, lambda si, array: array[si, :])
+            register_as_sample_specific(z_su, sample_axis=0)
 
             # add contribution to total log bias
             if denoising_model_config.disable_bias_factors_in_flat_class:
@@ -620,7 +637,7 @@ class DenoisingModel(GeneralizedContinuousModel):
             z_sg = Normal(name='z_sg', mu=0.0, sd=denoising_model_config.gc_curve_sd,
                           shape=(shared_workspace.num_samples, denoising_model_config.num_gc_bins),
                           broadcastable=(False, False))
-            register_as_sample_specific(z_sg, lambda si, array: array[si, :])
+            register_as_sample_specific(z_sg, sample_axis=0)
 
             # add contribution to total log bias
             log_bias_st += tst.dot(shared_workspace.W_gc_tg, z_sg.T).T
@@ -809,9 +826,6 @@ class HHMMClassAndCopyNumberBasicCaller:
         # compiled function for variational update of copy number HMM specs
         self._get_copy_number_hmm_specs_theano_func = self._get_compiled_copy_number_hmm_specs_theano_func()
 
-        # compiled function for update of auxiliary variables
-        self._update_c_map_st_theano_func = self._get_update_c_map_st_theano_func()
-
     def call(self,
              copy_number_update_summary_statistic_reducer,
              class_update_summary_statistic_reducer) -> Tuple[np.ndarray, np.ndarray, float, float]:
@@ -912,20 +926,8 @@ class HHMMClassAndCopyNumberBasicCaller:
         log_likelihood = float(fb_result[1])
         return class_update_size, log_likelihood
 
-    def _update_flat_class_bitmask_t(self):
-        if self.shared_workspace.denoising_config.q_c_expectation_mode == 'hybrid':
-            _logger.debug("Updating flat class bitmask...")
-            flat_class_bitmask_t: np.ndarray =\
-                self.shared_workspace.log_q_tau_tk.get_value(borrow=True)[:, 0] < -np.log(2)
-            padded_flat_class_bitmask_t = np.zeros_like(flat_class_bitmask_t)
-            for ti, neighbor_index_list in enumerate(self.shared_workspace.interval_neighbor_index_list):
-                padded_flat_class_bitmask_t[ti] = np.any(flat_class_bitmask_t[neighbor_index_list])
-            self.shared_workspace.flat_class_bitmask_t.set_value(
-                padded_flat_class_bitmask_t, borrow=config.borrow_numpy)
-
     def update_auxiliary_vars(self):
-        self._update_c_map_st_theano_func()
-        self._update_flat_class_bitmask_t()
+        self.shared_workspace.update_auxiliary_vars()
 
     @th.configparser.change_flags(compute_test_value="off")
     def _get_compiled_copy_number_hmm_specs_theano_func(self):
@@ -1023,11 +1025,3 @@ class HHMMClassAndCopyNumberBasicCaller:
 
         return th.function(inputs=[], outputs=[], updates=[
             (self.shared_workspace.log_class_emission_tk, log_class_emission_tk)])
-
-    @th.configparser.change_flags(compute_test_value="off")
-    def _get_update_c_map_st_theano_func(self):
-        c_map_st = tt.argmax(self.shared_workspace.log_q_c_stc, axis=2)
-
-        return th.function(inputs=[], outputs=[], updates=[
-            (self.shared_workspace.c_map_st, c_map_st)
-        ])

@@ -10,7 +10,7 @@ from ..models.model_denoising_calling import DenoisingModel, DenoisingModelConfi
     CopyNumberEmissionBasicSampler, InitialModelParametersSupplier, \
     DenoisingCallingWorkspace, CopyNumberCallingConfig, HHMMClassAndCopyNumberBasicCaller
 from ..io.io_denoising_calling import DenoisingModelImporter
-from ..inference.sample_specific_opt import SampleSpecificAdamax
+from ..inference.fancy_optimizers import FancyAdamax
 
 _logger = logging.getLogger(__name__)
 
@@ -124,9 +124,10 @@ class CaseDenoisingCallingTask(HybridInferenceTask):
                 calling_config, hybrid_inference_params, shared_workspace, self.temperature)
 
         elbo_normalization_factor = shared_workspace.num_samples * shared_workspace.num_intervals
-        opt = SampleSpecificAdamax(hybrid_inference_params.learning_rate,
-                                   hybrid_inference_params.adamax_beta1,
-                                   hybrid_inference_params.adamax_beta2)
+        opt = FancyAdamax(learning_rate=hybrid_inference_params.learning_rate,
+                          beta1=hybrid_inference_params.adamax_beta1,
+                          beta2=hybrid_inference_params.adamax_beta2,
+                          sample_specific=True)
 
         super().__init__(hybrid_inference_params, denoising_model, copy_number_emission_sampler, copy_number_caller,
                          elbo_normalization_factor=elbo_normalization_factor,
