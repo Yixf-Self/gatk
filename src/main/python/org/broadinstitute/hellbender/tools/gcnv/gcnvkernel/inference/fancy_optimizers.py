@@ -29,14 +29,40 @@ class FancyStochasticOptimizer:
 
 
 class FancyAdamax(FancyStochasticOptimizer):
-    def __init__(self, learning_rate=0.002, beta1=0.9, beta2=0.999, epsilon=1e-8, sample_specific=False):
+    def __init__(self, learning_rate=0.002, beta1=0.9, beta2=0.999, epsilon=1e-8,
+                 sample_specific=False, disable_bias_correction=False):
         self.learning_rate = learning_rate
         self.beta1 = beta1
         self.beta2 = beta2
         self.epsilon = epsilon
         self.sample_specific = sample_specific
-        self.m_adam = []
-        self.u_adam = []
+        self.disable_bias_correction = disable_bias_correction
+        self.m_tensors = []
+        self.u_tensors = []
+        self.res_tensor = None
+
+    def _assert_shared_tensors_available(self):
+        assert len(self.m_tensors) == 2 and len(self.u_tensors) == 2 and self.res_tensor is not None,\
+            "shared adamax tensors are not available yet"
+
+    def get_mu_m(self):
+        self._assert_shared_tensors_available()
+        return self.m_tensors[0]
+
+    def get_rho_m(self):
+        self._assert_shared_tensors_available()
+        return self.m_tensors[1]
+
+    def get_mu_u(self):
+        self._assert_shared_tensors_available()
+        return self.u_tensors[0]
+
+    def get_rho_u(self):
+        self._assert_shared_tensors_available()
+        return self.u_tensors[1]
+
+    def get_res_tensor(self):
+        return self.res_tensor
 
     @staticmethod
     def sample_specific_adamax(loss_or_grads=None,
@@ -46,6 +72,7 @@ class FancyAdamax(FancyStochasticOptimizer):
                                learning_rate=0.002, beta1=0.9,
                                beta2=0.999, epsilon=1e-8,
                                sample_specific=False,
+                               disable_bias_correction=False,
                                base_class: 'FancyAdamax' = None):
         if loss_or_grads is None and params is None:
             return partial(FancyAdamax.sample_specific_adamax,
@@ -57,7 +84,6 @@ class FancyAdamax(FancyStochasticOptimizer):
         assert approx is not None
 
         all_grads = get_or_compute_grads(loss_or_grads, params)
-        t_prev = th.shared(pm.theanof.floatX(0.))
         updates = OrderedDict()
 
         # indices of sample-specific vars
@@ -73,8 +99,15 @@ class FancyAdamax(FancyStochasticOptimizer):
         # Using theano constant to prevent upcasting of float32
         one = tt.constant(1)
 
-        t = t_prev + 1
-        a_t = learning_rate / (one - beta1**t)
+        if disable_bias_correction:
+            a_t = learning_rate
+        else:
+            res_prev = th.shared(pm.theanof.floatX(beta1))
+            res = beta1 * res_prev
+            a_t = learning_rate / (one - res)
+            updates[res_prev] = res
+            if base_class is not None:
+                base_class.res_tensor = res_prev
 
         for param, g_t in zip(params, all_grads):
             if sample_specific:
@@ -93,8 +126,8 @@ class FancyAdamax(FancyStochasticOptimizer):
 
             # save a reference to m and u in the base class
             if base_class is not None:
-                base_class.m_adam.append(m_prev)
-                base_class.u_adam.append(u_prev)
+                base_class.m_tensors.append(m_prev)
+                base_class.u_tensors.append(u_prev)
 
             m_t = beta1 * m_prev + (one - beta1) * g_t_view
             u_t = tt.maximum(beta2 * u_prev, abs(g_t_view))
@@ -109,14 +142,12 @@ class FancyAdamax(FancyStochasticOptimizer):
             updates[u_prev] = u_t
             updates[param] = new_param
 
-        updates[t_prev] = t
         return updates
 
     def get_opt(self,
                 model: GeneralizedContinuousModel=None,
                 approx: pm.MeanField=None):
-        return FancyAdamax.sample_specific_adamax(model=model, approx=approx,
-                                                  beta1=self.beta1, beta2=self.beta2,
-                                                  learning_rate=self.learning_rate,
-                                                  sample_specific=self.sample_specific,
-                                                  base_class=self)
+        return FancyAdamax.sample_specific_adamax(
+            model=model, approx=approx, beta1=self.beta1, beta2=self.beta2,
+            learning_rate=self.learning_rate, sample_specific=self.sample_specific,
+            disable_bias_correction=self.disable_bias_correction, base_class=self)

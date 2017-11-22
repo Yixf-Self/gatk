@@ -209,7 +209,6 @@ class SampleDenoisingAndCallingPosteriorsImporter:
         for si in range(self.denoising_calling_workspace.num_samples):
             sample_posterior_path = os.path.join(self.input_calls_path, io_consts.sample_folder_prefix + repr(si))
             assert os.path.exists(sample_posterior_path)
-            _logger.info("Importing posteriors for sample \"{0}\"...".format(si))
 
             # import sample-specific posteriors and update approximation
             io_commons.import_meanfield_sample_specific_params(

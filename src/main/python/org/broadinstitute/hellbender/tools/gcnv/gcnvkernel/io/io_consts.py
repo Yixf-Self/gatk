@@ -40,3 +40,4 @@ default_contig_ploidy_prior_tsv_filename = 'contig_ploidy_prior.tsv'
 
 default_adamax_m_filename = "adamax_m.tsv"
 default_adamax_u_filename = "adamax_u.tsv"
+default_adamax_res_filename = "adamax_res.tsv"
