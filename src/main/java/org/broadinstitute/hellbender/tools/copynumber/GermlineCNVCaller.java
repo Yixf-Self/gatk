@@ -44,8 +44,8 @@ import java.util.stream.Collectors;
  *      If a single sample and a model directory are input, then only files that specify calls and sample-level
  *      model parameters for that sample are output.  Again, these should be used as input to
  *      {@link //TODO PostprocessGermlineCNVCalls}.
- *      Only the modeled intervals are used and must be present in all of the count files;
- *      any intervals specified via -L are ignored.
+ *      Only the modeled intervals are used and must be present in all of the count files; no intervals
+ *      should be specified via -L.
  *  </p>
  *
  * TODO Mehrtash can add documentation here
@@ -187,56 +187,49 @@ public final class GermlineCNVCaller extends GATKTool {
     public void traverse() {}  // no traversal for this tool
 
     private void setModeAndValidateArguments() {
-        if (inputModelDir == null) {
-            if (inputReadCountFiles.size() > 1) {
-                logger.info("Multiple samples provided, running in cohort mode...");
-                mode = Mode.COHORT;
-            } else {
-                throw new UserException("Multiple samples must be provided if a denoising-model directory is not.");
-            }
-        } else {
-            Utils.validateArg(!new File(inputModelDir).exists(), "Denoising-model directory does not exist.");
-            if (inputReadCountFiles.size() > 1) {
-                logger.warn("Multiple samples and a denoising-model directory were provided; the latter will be ignored...");
-                mode = Mode.COHORT;
-            } else {
-                logger.info("A single sample and a denoising-model directory were provided, running in case mode...");
-                mode = Mode.CASE;
-            }
-        }
-
         inputReadCountFiles.forEach(IOUtils::canReadFile);
 
-        final SAMSequenceDictionary sequenceDictionary = getBestAvailableSequenceDictionary();
-        CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection(intervalArgumentCollection);
-        intervals = hasIntervals()
-                ? new LinkedHashSet<>(intervalArgumentCollection.getIntervals(sequenceDictionary))
-                : getIntervalsFromFirstReadCountFile();
-
-        if (inputAnnotatedIntervalsFile != null) {
-            IOUtils.canReadFile(inputAnnotatedIntervalsFile);
+        if (inputModelDir != null) {
+            Utils.validateArg(new File(inputModelDir).exists(),
+                    String.format("Input denoising-model directory %s does not exist.", inputModelDir));
         }
 
-        if (mode == Mode.COHORT) {
+        if (inputReadCountFiles.size() > 1) {
+            logger.info("Multiple samples were provided, running in cohort mode...");
+            mode = Mode.COHORT;
+
             Utils.validateArg(inputReadCountFiles.size() == new HashSet<>(inputReadCountFiles).size(),
                     "List of input read-count files cannot contain duplicates.");
+
+            final SAMSequenceDictionary sequenceDictionary = getBestAvailableSequenceDictionary();
+            CopyNumberArgumentValidationUtils.validateIntervalArgumentCollection(intervalArgumentCollection);
+            intervals = hasIntervals()
+                    ? new LinkedHashSet<>(intervalArgumentCollection.getIntervals(sequenceDictionary))
+                    : getIntervalsFromFirstReadCountFile();
+
             if (inputAnnotatedIntervalsFile != null) {
-                Utils.validateArg(new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile).getIntervals().containsAll(intervals),
-                        "Annotated-intervals file does not contain all specified intervals.");
+                IOUtils.canReadFile(inputAnnotatedIntervalsFile);
             }
-        } else if (mode == Mode.CASE) {
+            Utils.validateArg(new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile).getIntervals().containsAll(intervals),
+                    "Annotated-intervals file does not contain all specified intervals.");
+
+        } else {
+            logger.info("A single sample was provided, running in case mode...");
+            mode = Mode.CASE;
+
             if (hasIntervals()) {
-                logger.warn("Running in case mode, but intervals were provided; they will be ignored...");
+                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but intervals were provided.");
             }
+
             if (inputAnnotatedIntervalsFile != null) {
-                logger.warn("Running in case mode, but an annotated-intervals file was provided; it will be ignored...");
+                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but an annotated-intervals file was provided.");
             }
+
+            Utils.nonNull(inputModelDir, "An input denoising-model directory must be provided in case mode.");
         }
 
         Utils.nonNull(outputPrefix);
-        if (!new File(outputDir).exists()) {
-            throw new UserException(String.format("Output directory %s does not exist.", outputDir));
-        }
+        Utils.validateArg(new File(outputDir).exists(), String.format("Output directory %s does not exist.", outputDir));
 
         //TODO validate argument collections
     }
@@ -275,10 +268,13 @@ public final class GermlineCNVCaller extends GATKTool {
                                                          final File intervalsFile) {
         final PythonScriptExecutor executor = new PythonScriptExecutor(true);
         final String outputDirArg = Utils.nonEmpty(outputDir).endsWith(File.separator) ? outputDir : outputDir + File.separator;    //add trailing slash if necessary
+
+        //add required arguments
         final List<String> arguments = new ArrayList<>(Arrays.asList(
-                "--modeling_interval_list=" + intervalsFile.getAbsolutePath(),
-                "--sample_read_depth_metadata_table=" + inputContigPloidyCallsDir.getAbsolutePath(),
+                "--modeling_interval_list=" + intervalsFile.getAbsolutePath(),  //these are the annotated intervals, if provided
+                "--ploidy_calls_path=" + inputContigPloidyCallsDir.getAbsolutePath(),
                 "--output_calls_path=" + outputDirArg + outputPrefix + OUTPUT_CALLS_SUFFIX));
+        intervalSubsetReadCountFiles.forEach(f -> arguments.add("--read_count_tsv_files=" + f.getAbsolutePath()));
         arguments.addAll(germlineDenoisingArgumentCollection.generatePythonArguments());
         arguments.addAll(germlineCallingArgumentCollection.generatePythonArguments());
 
@@ -288,13 +284,15 @@ public final class GermlineCNVCaller extends GATKTool {
 
         final String script;
         if (mode == Mode.COHORT) {
-            arguments.add("--output_model_path=" + outputDirArg + outputPrefix);
             script = COHORT_DENOISING_CALLING_PYTHON_SCRIPT;
+            arguments.add("--output_model_path=" + outputDirArg + outputPrefix);
+            if (inputModelDir != null) {
+                arguments.add("--input_model_path=" + inputModelDir);
+            }
 
         } else {
-            //TODO
-            arguments.add("--input_model_path=" + inputModelDir + outputPrefix);
             script = CASE_SAMPLE_CALLING_PYTHON_SCRIPT;
+            arguments.add("--input_model_path=" + inputModelDir);
         }
         return executor.executeScript(
                 new Resource(script, GermlineCNVCaller.class),

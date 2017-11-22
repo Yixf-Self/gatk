@@ -5,7 +5,6 @@ os.environ["THEANO_FLAGS"] = "device=cpu,floatX=float64,optimizer=fast_run,compu
 
 import argparse
 import gcnvkernel
-import shutil
 
 parser = argparse.ArgumentParser(description="gCNV contig ploidy and read depth determination tool",
                                  formatter_class=gcnvkernel.cli_commons.GCNVHelpFormatter)
@@ -16,29 +15,17 @@ gcnvkernel.cli_commons.add_logging_args_to_argparse(parser)
 # add tool-specific args
 group = parser.add_argument_group(title="Required arguments")
 
-group.add_argument("--interval_list",
-                   type=str,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="Interval list of included genomic regions in the analysis (in .tsv format)")
-
 group.add_argument("--sample_coverage_metadata",
                    type=str,
                    required=True,
                    default=argparse.SUPPRESS,
                    help="Coverage metadata of all samples (in .tsv format)")
 
-group.add_argument("--contig_ploidy_prior_table",
+group.add_argument("--input_model_path",
                    type=str,
                    required=True,
                    default=argparse.SUPPRESS,
-                   help="Contig ploidy prior probabilities (in .tsv format)")
-
-group.add_argument("--output_model_path",
-                   type=str,
-                   required=True,
-                   default=argparse.SUPPRESS,
-                   help="Output path to write the ploidy model for future single-sample ploidy determination use")
+                   help="Path to ploidy model parameters")
 
 group.add_argument("--output_calls_path",
                    type=str,
@@ -47,7 +34,13 @@ group.add_argument("--output_calls_path",
                    help="Output path to write posteriors")
 
 # optional arguments
-gcnvkernel.PloidyModelConfig.expose_args(parser)
+# Note: we are hiding parameters that are either set by the model or are irrelevant to the case calling task
+gcnvkernel.PloidyModelConfig.expose_args(
+    parser,
+    hide={
+        "--mean_bias_sd",
+        "--psi_j_scale"
+    })
 
 # override some inference parameters
 gcnvkernel.HybridInferenceParameters.expose_args(
@@ -77,47 +70,45 @@ if __name__ == "__main__":
     args = parser.parse_args()
     gcnvkernel.cli_commons.set_logging_config_from_args(args)
 
-    # read contig ploidy prior map from file
+    # read contig ploidy prior map from the model
+    contig_ploidy_prior_file = os.path.join(args.input_model_path,
+                                            gcnvkernel.io_consts.default_contig_ploidy_prior_tsv_filename)
+    assert os.path.exists(contig_ploidy_prior_file) and os.path.isfile(contig_ploidy_prior_file),\
+        "The provided ploidy model is corrupted: it does not include contig ploidy priors .tsv file"
     contig_ploidy_prior_map = gcnvkernel.PloidyModelConfig.get_contig_ploidy_prior_map_from_tsv_file(
-        args.contig_ploidy_prior_table)
+        contig_ploidy_prior_file)
 
-    # load interval list
-    interval_list = gcnvkernel.io_intervals_and_counts.load_interval_list_tsv_file(args.interval_list)
+    # load interval list from the model
+    interval_list_file = os.path.join(args.input_model_path, gcnvkernel.io_consts.default_interval_list_filename)
+    assert os.path.exists(interval_list_file) and os.path.isfile(interval_list_file),\
+        "The provided ploidy model is corrupted: it does not include interval list .tsv file"
+    interval_list = gcnvkernel.io_intervals_and_counts.load_interval_list_tsv_file(interval_list_file)
 
     # load sample coverage metadata
     sample_metadata_collection: gcnvkernel.SampleMetadataCollection = gcnvkernel.SampleMetadataCollection()
     sample_names = gcnvkernel.io_metadata.read_sample_coverage_metadata(
         sample_metadata_collection, args.sample_coverage_metadata)
 
-    # generate interval list metadata
+    # generate intervals metadata
     intervals_metadata: gcnvkernel.IntervalListMetadata = gcnvkernel.IntervalListMetadata(interval_list)
 
     # inject ploidy prior map to the dictionary of parsed args
     args_dict = args.__dict__
     args_dict['contig_ploidy_prior_map'] = contig_ploidy_prior_map
 
+    # setup the case ploidy inference task
     ploidy_config = gcnvkernel.PloidyModelConfig.from_args_dict(args_dict)
     ploidy_inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)
     ploidy_workspace = gcnvkernel.PloidyWorkspace(ploidy_config, intervals_metadata, sample_names,
                                                   sample_metadata_collection)
-    ploidy_task = gcnvkernel.CohortPloidyInferenceTask(ploidy_inference_params, ploidy_config, ploidy_workspace)
+    ploidy_task = gcnvkernel.CasePloidyInferenceTask(
+        ploidy_inference_params, ploidy_config, ploidy_workspace, args.input_model_path)
 
     # go!
     ploidy_task.engage()
     ploidy_task.disengage()
 
-    # save model parameters
-    gcnvkernel.io_ploidy.PloidyModelExporter(ploidy_config, ploidy_workspace,
-                                             ploidy_task.continuous_model, ploidy_task.continuous_model_approx,
-                                             args.output_model_path)()
-
     # sample sample-specific posteriors
-    gcnvkernel.io_ploidy.SamplePloidyExporter(ploidy_config, ploidy_workspace,
-                                              ploidy_task.continuous_model, ploidy_task.continuous_model_approx,
-                                              args.output_calls_path)()
-
-    # save a copy of interval list and ploidy priors as well
-    shutil.copy(args.interval_list,
-                os.path.join(args.output_model_path, gcnvkernel.io_consts.default_interval_list_filename))
-    shutil.copy(args.contig_ploidy_prior_table,
-                os.path.join(args.output_model_path, gcnvkernel.io_consts.default_contig_ploidy_prior_tsv_filename))
+    gcnvkernel.io_ploidy.SamplePloidyExporter(
+        ploidy_config, ploidy_workspace, ploidy_task.continuous_model,
+        ploidy_task.continuous_model_approx, args.output_calls_path)()
