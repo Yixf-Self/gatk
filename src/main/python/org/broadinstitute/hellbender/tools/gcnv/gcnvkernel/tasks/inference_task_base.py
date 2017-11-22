@@ -13,7 +13,7 @@ from typing import List, Callable, Optional, Set, Tuple, Any, Dict
 from abc import abstractmethod
 from ..inference.covergence_tracker import NoisyELBOConvergenceTracker
 from ..inference.param_tracker import ParamTrackerConfig, ParamTracker
-from ..inference.fancy_optimizers import FancyStochasticOptimizer
+from ..inference.fancy_optimizers import FancyAdamax
 from ..inference.deterministic_annealing import ADVIDeterministicAnnealing
 from .. import types
 
@@ -171,19 +171,21 @@ class HybridInferenceTask(InferenceTask):
                 random_seed=self.hybrid_inference_params.random_seed,
                 temperature=self.temperature)
             self.continuous_model_approx: pm.MeanField = self.continuous_model_advi.approx
+
             if 'custom_optimizer' in kwargs.keys():
                 opt = kwargs['custom_optimizer']
-                assert issubclass(type(opt), FancyStochasticOptimizer)
-                self.continuous_model_opt_base_class = opt
-                self.continuous_model_opt = opt.get_opt(self.continuous_model, self.continuous_model_approx)
+                assert isinstance(opt, FancyAdamax)
+                self.fancy_adamax = opt
             else:
-                self.continuous_model_opt = pm.adamax(
-                    learning_rate=self.hybrid_inference_params.learning_rate,
-                    beta1=self.hybrid_inference_params.adamax_beta1,
-                    beta2=self.hybrid_inference_params.adamax_beta2)
+                self.fancy_adamax = FancyAdamax(
+                    learning_rate=hybrid_inference_params.learning_rate,
+                    beta1=hybrid_inference_params.adamax_beta1,
+                    beta2=hybrid_inference_params.adamax_beta2,
+                    sample_specific=False)
+
             self.continuous_model_step_func = self.continuous_model_advi.objective.step_function(
                 score=True,
-                obj_optimizer=self.continuous_model_opt,
+                obj_optimizer=self.fancy_adamax.get_opt(self.continuous_model, self.continuous_model_approx),
                 total_grad_norm_constraint=self.hybrid_inference_params.total_grad_norm_constraint,
                 obj_n_mc=self.hybrid_inference_params.obj_n_mc,
                 more_updates=temperature_update)

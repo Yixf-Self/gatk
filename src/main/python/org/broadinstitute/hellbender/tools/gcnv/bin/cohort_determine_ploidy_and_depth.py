@@ -46,7 +46,6 @@ group.add_argument("--output_calls_path",
                    default=argparse.SUPPRESS,
                    help="Output path to write posteriors")
 
-
 # optional arguments
 gcnvkernel.PloidyModelConfig.expose_args(parser)
 

@@ -35,8 +35,8 @@ class FancyAdamax(FancyStochasticOptimizer):
         self.beta2 = beta2
         self.epsilon = epsilon
         self.sample_specific = sample_specific
-        self.m = []
-        self.u = []
+        self.m_adam = []
+        self.u_adam = []
 
     @staticmethod
     def sample_specific_adamax(loss_or_grads=None,
@@ -93,8 +93,8 @@ class FancyAdamax(FancyStochasticOptimizer):
 
             # save a reference to m and u in the base class
             if base_class is not None:
-                base_class.m.append(m_prev)
-                base_class.u.append(u_prev)
+                base_class.m_adam.append(m_prev)
+                base_class.u_adam.append(u_prev)
 
             m_t = beta1 * m_prev + (one - beta1) * g_t_view
             u_t = tt.maximum(beta2 * u_prev, abs(g_t_view))

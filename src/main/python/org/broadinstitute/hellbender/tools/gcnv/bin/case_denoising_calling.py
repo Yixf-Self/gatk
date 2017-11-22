@@ -46,11 +46,23 @@ group.add_argument("--output_calls_path",
                    default=argparse.SUPPRESS,
                    help="Output path to write CNV calls")
 
+group.add_argument("--output_adamax_path",
+                   type=str,
+                   required=False,
+                   default=argparse.SUPPRESS,
+                   help="(advanced) Output path to write adamax moment estimates")
+
 group.add_argument("--input_calls_path",
                    type=str,
                    required=False,
                    default=argparse.SUPPRESS,
                    help="Path to previously obtained calls to take as starting point")
+
+group.add_argument("--input_adamax_path",
+                   type=str,
+                   required=False,
+                   default=argparse.SUPPRESS,
+                   help="(advanced) Path to previously obtained adamax moment estimates take as starting point")
 
 # add denoising config args
 # Note: we are hiding parameters that are either set by the model or are irrelevant to the case calling task
@@ -197,6 +209,10 @@ if __name__ == "__main__":
             shared_workspace, task.continuous_model, task.continuous_model_approx,
             args.input_calls_path)()
 
+    if hasattr(args, 'input_adamax_path'):
+        logger.info("An adamax moment path was provided to use as starting point...")
+        gcnvkernel.io_adamax.AdamaxMomentEstimateImporter(task.fancy_adamax, args.input_adamax_path)()
+
     # go!
     task.engage()
     task.disengage()
@@ -209,3 +225,7 @@ if __name__ == "__main__":
     # save a copy of targets in the calls path
     shutil.copy(os.path.join(args.input_model_path, gcnvkernel.io_consts.default_interval_list_filename),
                 os.path.join(args.output_calls_path, gcnvkernel.io_consts.default_interval_list_filename))
+
+    # save adamax moments
+    if hasattr(args, 'output_adamax_path'):
+        gcnvkernel.io_adamax.AdamaxMomentEstimateExporter(task.fancy_adamax, args.output_adamax_path)()
