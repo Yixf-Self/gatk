@@ -8,8 +8,6 @@ import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
 import org.broadinstitute.hellbender.cmdline.CommandLineProgram;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
-import org.broadinstitute.hellbender.cmdline.argumentcollections.IntervalArgumentCollection;
-import org.broadinstitute.hellbender.cmdline.argumentcollections.RequiredIntervalArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGroup;
 import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.exceptions.UserException;
@@ -89,7 +87,8 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         COHORT, CASE
     }
 
-    private static final String DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT = "cohort_determine_ploidy_and_depth.py";
+    private static final String COHORT_DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT = "cohort_determine_ploidy_and_depth.py";
+    private static final String CASE_DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT = "case_determine_ploidy_and_depth.py";
 
     public static final String MODEL_PATH_SUFFIX = "-model";
     public static final String CALLS_PATH_SUFFIX = "-calls";
@@ -100,7 +99,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
     @Argument(
             doc = "Input read-count files containing integer read counts in genomic intervals for all samples.  " +
                     "Intervals must be identical and in the same order for all samples.  " +
-                    "If only a single sample is specified, a model directory must also be specified.  ",
+                    "If only a single sample is specified, an input ploidy-model directory must also be specified.  ",
             fullName = StandardArgumentDefinitions.INPUT_LONG_NAME,
             shortName = StandardArgumentDefinitions.INPUT_SHORT_NAME,
             minElements = 1
@@ -108,20 +107,22 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
     private List<File> inputReadCountFiles = new ArrayList<>();
 
     @Argument(
-            doc = "Input file specifying contig-ploidy priors.",
+            doc = "Input file specifying contig-ploidy priors.  If only a single sample is specified, this input should not be provided.  " +
+                    "If multiple samples are specified, this input is required.",
             fullName = CONTIG_PLOIDY_PRIORS_FILE_LONG_NAME,
-            shortName = CONTIG_PLOIDY_PRIORS_FILE_SHORT_NAME
+            shortName = CONTIG_PLOIDY_PRIORS_FILE_SHORT_NAME,
+            optional = true
     )
     private File inputContigPloidyPriorsFile;
 
     @Argument(
-            doc = "Input ploidy-model directory.  If only a single sample is specified, this model will be used.  " +
-                    "If multiple samples are specified, a new model will be built and this input will be ignored.",
+            doc = "Input ploidy-model directory.  If only a single sample is specified, this input is required.  " +
+                    "If multiple samples are specified, this input should not be provided.",
             fullName = CopyNumberStandardArgument.MODEL_LONG_NAME,
             shortName = CopyNumberStandardArgument.MODEL_SHORT_NAME,
             optional = true
     )
-    private String inputModelDir = null;
+    private String inputModelDir;
 
     @Argument(
             doc = "Prefix for output filenames.",
@@ -167,29 +168,39 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
     }
 
     private void setModeAndValidateArguments() {
-        if (inputModelDir == null) {
-            if (inputReadCountFiles.size() > 1) {
-                logger.info("Multiple samples provided, running in cohort mode...");
-                mode = Mode.COHORT;
-            } else {
-                throw new UserException("Multiple samples must be provided if a ploidy-model directory is not.");
-            }
-        } else {
-            Utils.validateArg(!new File(inputModelDir).exists(), "Ploidy-model directory does not exist.");
-            if (inputReadCountFiles.size() > 1) {
-                logger.warn("Multiple samples and a ploidy-model directory were provided; the latter will be ignored...");
-                mode = Mode.COHORT;
-            } else {
-                logger.info("A single sample and a ploidy-model directory were provided, running in case mode...");
-                mode = Mode.CASE;
-            }
-        }
-
-        Utils.validateArg(inputReadCountFiles.size() == new HashSet<>(inputReadCountFiles).size(),
-                "List of input read-count files cannot contain duplicates.");
         inputReadCountFiles.forEach(IOUtils::canReadFile);
 
-        IOUtils.canReadFile(inputContigPloidyPriorsFile);
+        if (inputContigPloidyPriorsFile != null) {
+            IOUtils.canReadFile(inputContigPloidyPriorsFile);
+        }
+
+        if (inputModelDir != null) {
+            Utils.validateArg(new File(inputModelDir).exists(),
+                    String.format("Input ploidy-model directory %s does not exist.", inputModelDir));
+        }
+
+        if (inputReadCountFiles.size() > 1) {
+            logger.info("Multiple samples were provided, running in cohort mode...");
+            mode = Mode.COHORT;
+
+            Utils.validateArg(inputReadCountFiles.size() == new HashSet<>(inputReadCountFiles).size(),
+                    "List of input read-count files cannot contain duplicates.");
+
+            Utils.nonNull(inputContigPloidyPriorsFile, "Contig-ploidy priors must be provided in cohort mode.");
+
+            if (inputModelDir != null) {
+                throw new UserException.BadInput("Invalid combination of inputs: Running in cohort mode, but ploidy-model directory was provided.");
+            }
+        } else {
+            logger.info("A single sample was provided, running in case mode...");
+            mode = Mode.CASE;
+
+            if (inputContigPloidyPriorsFile != null) {
+                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but contig-ploidy priors were provided.");
+            }
+
+            Utils.nonNull(inputModelDir, "An input ploidy-model directory must be provided in case mode.");
+        }
 
         Utils.nonNull(outputPrefix);
         if (!new File(outputDir).exists()) {
@@ -276,28 +287,32 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         final PythonScriptExecutor executor = new PythonScriptExecutor(true);
         final String outputDirArg = Utils.nonEmpty(outputDir).endsWith(File.separator) ? outputDir : outputDir + File.separator;    //add trailing slash if necessary
         final List<String> arguments = new ArrayList<>(Arrays.asList(
-                "--interval_list=" + intervalsFile.getAbsolutePath(),
                 "--sample_coverage_metadata=" + sampleCoverageMetadataFile.getAbsolutePath(),
-                "--contig_ploidy_prior_table=" + inputContigPloidyPriorsFile.getAbsolutePath(),
                 "--output_calls_path=" + outputDirArg + outputPrefix + CALLS_PATH_SUFFIX));
-
-        if (mode == Mode.COHORT) {
-            arguments.add("--output_model_path=" + outputDirArg + outputPrefix + MODEL_PATH_SUFFIX);
-        } else if (mode == Mode.CASE)  {
-            //TODO
-        }
         arguments.addAll(ploidyDeterminationArgumentCollection.generatePythonArguments());
+
+        final String script;
+        if (mode == Mode.COHORT) {
+            script = COHORT_DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT;
+            arguments.add("--interval_list=" + intervalsFile.getAbsolutePath());
+            arguments.add("--contig_ploidy_prior_table=" + inputContigPloidyPriorsFile.getAbsolutePath());
+            arguments.add("--output_model_path=" + outputDirArg + outputPrefix + MODEL_PATH_SUFFIX);
+        } else {
+            script = CASE_DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT;
+            arguments.add("--input_model_path=" + inputModelDir);
+        }
+        System.out.println(arguments.stream().collect(Collectors.joining(" ")));
         return executor.executeScript(
-                new Resource(DETERMINE_PLOIDY_AND_DEPTH_PYTHON_SCRIPT, DetermineGermlineContigPloidy.class),
+                new Resource(script, GermlineCNVCaller.class),
                 null,
                 arguments);
     }
 
-    private static final class PloidyDeterminationArgumentCollection implements Serializable {
+    private final class PloidyDeterminationArgumentCollection implements Serializable {
         private static final long serialVersionUID = 1L;
 
         @Argument(
-                doc = "Contig-level mean bias standard deviation.",
+                doc = "Contig-level mean bias standard deviation.  If a single sample is provided, this input will be ignored.",
                 fullName = "meanBiasStandardDeviation",
                 minValue = 0.,
                 optional = true
@@ -313,7 +328,7 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         private double mappingErrorRate = 0.01;
 
         @Argument(
-                doc = "Global contig-level unexplained variance scale.",
+                doc = "Global contig-level unexplained variance scale.  If a single sample is provided, this input will be ignored.",
                 fullName = "globalPsiScale",
                 minValue = 0.,
                 optional = true
@@ -329,11 +344,15 @@ public final class DetermineGermlineContigPloidy extends CommandLineProgram {
         private double samplePsiScale = 0.0001;
 
         private List<String> generatePythonArguments() {
-            return Arrays.asList(
-                    String.format("--mean_bias_sd=%f", meanBiasStandardDeviation),
+            final List<String> arguments = new ArrayList<>(Arrays.asList(
                     String.format("--mapping_error_rate=%f", mappingErrorRate),
-                    String.format("--psi_j_scale=%f", globalPsiScale),
-                    String.format("--psi_s_scale=%f", samplePsiScale));
+                    String.format("--psi_s_scale=%f", samplePsiScale)));
+            if (mode == Mode.COHORT) {
+                arguments.addAll(Arrays.asList(
+                        String.format("--mean_bias_sd=%f", meanBiasStandardDeviation),
+                        String.format("--psi_j_scale=%f", globalPsiScale)));
+            }
+            return arguments;
         }
     }
 }

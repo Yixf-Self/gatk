@@ -102,7 +102,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             doc = "Input read-count files containing integer read counts in genomic intervals for all samples.  " +
                     "All intervals specified via -L must be contained; " +
                     "if none are specified, then intervals must be identical and in the same order for all samples.  " +
-                    "If only a single sample is specified, a model directory must also be specified.  ",
+                    "If only a single sample is specified, an input denoising-model directory must also be specified.  ",
             fullName = StandardArgumentDefinitions.INPUT_LONG_NAME,
             shortName = StandardArgumentDefinitions.INPUT_SHORT_NAME,
             minElements = 1
@@ -117,8 +117,8 @@ public final class GermlineCNVCaller extends CommandLineProgram {
     private String inputContigPloidyCallsDir;
 
     @Argument(
-            doc = "Input denoising-model directory.  If only a single sample is specified, this model will be used.  " +
-                    "If multiple samples are specified, a new model will be built and this input will be ignored.",
+            doc = "Input denoising-model directory.  If only a single sample is specified, this input is required.  " +
+                    "If multiple samples are specified, a new model will be built using this input model to initialize.",
             fullName = CopyNumberStandardArgument.MODEL_LONG_NAME,
             shortName = CopyNumberStandardArgument.MODEL_SHORT_NAME,
             optional = true
@@ -128,7 +128,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
     @Argument(
             doc = "Input annotated-interval file containing annotations for GC content in genomic intervals (output of AnnotateIntervals).  " +
                     "All intervals specified via -L must be contained.  " +
-                    "This input will be ignored in case-calling mode.",
+                    "If only a single sample is specified, this input should not be provided.",
             fullName = CopyNumberStandardArgument.ANNOTATED_INTERVALS_FILE_LONG_NAME,
             shortName = CopyNumberStandardArgument.ANNOTATED_INTERVALS_FILE_SHORT_NAME,
             optional = true
@@ -150,7 +150,8 @@ public final class GermlineCNVCaller extends CommandLineProgram {
     private String outputDir;
 
     @Argument(
-            doc = "Use the given sequence dictionary as the master/canonical sequence dictionary.  Must be a .dict file.",
+            doc = "Use the given sequence dictionary as the master/canonical sequence dictionary.  Must be a .dict file.  " +
+                    "Must be provided if intervals are specified via -L.",
             fullName = StandardArgumentDefinitions.SEQUENCE_DICTIONARY_NAME,
             shortName = StandardArgumentDefinitions.SEQUENCE_DICTIONARY_NAME,
             optional = true
@@ -237,7 +238,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             mode = Mode.CASE;
 
             if (sequenceDictionaryFile != null) {
-                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but sequence dictionary was provided.");
+                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but a sequence dictionary was provided.");
             }
 
             if (intervalArgumentCollection.intervalsSpecified()) {
@@ -245,7 +246,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             }
 
             if (inputAnnotatedIntervalsFile != null) {
-                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but an annotated-intervals file was provided.");
+                throw new UserException.BadInput("Invalid combination of inputs: Running in case mode, but annotated intervals were provided.");
             }
 
             Utils.nonNull(inputModelDir, "An input denoising-model directory must be provided in case mode.");
@@ -319,7 +320,6 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             script = CASE_SAMPLE_CALLING_PYTHON_SCRIPT;
             arguments.add("--input_model_path=" + inputModelDir);
         }
-        System.out.println(arguments.stream().collect(Collectors.joining(" ")));
         return executor.executeScript(
                 new Resource(script, GermlineCNVCaller.class),
                 null,
