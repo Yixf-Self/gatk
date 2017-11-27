@@ -7,7 +7,6 @@ import os
 import json
 from typing import List, Optional
 
-from .._version import __version__ as gcnvkernel_version
 from .. import config
 from ..models.model_denoising_calling import DenoisingCallingWorkspace, DenoisingModel
 from ..models.model_denoising_calling import CopyNumberCallingConfig, DenoisingModelConfig
@@ -48,9 +47,7 @@ class DenoisingModelExporter:
 
     def __call__(self):
         # export gcnvkernel version
-        io_commons.export_dict_to_json_file(
-            os.path.join(self.output_path, io_consts.default_gcnvkernel_version_json_filename),
-            {'version': gcnvkernel_version}, {})
+        io_commons.export_gcnvkernel_version(self.output_path)
 
         # export denoising config
         io_commons.export_dict_to_json_file(

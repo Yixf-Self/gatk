@@ -294,3 +294,18 @@ def import_meanfield_sample_specific_params(input_sample_calls_path: str,
                 model_rho.set_value(_update_param_inplace(
                     model_rho.get_value(borrow=True), vmap.slc, vmap.shp, var_rho,
                     var_sample_axis, sample_index), borrow=True)
+
+
+def export_gcnvkernel_version(output_path: str):
+    # export gcnvkernel version
+    export_dict_to_json_file(
+        os.path.join(output_path, io_consts.default_gcnvkernel_version_json_filename),
+        {'version': gcnvkernel_version}, {})
+
+
+def assert_mandatory_columns(mandatory_columns_set: Set[str],
+                             found_columns_set: Set[str],
+                             input_tsv_file: str):
+    not_found_set = mandatory_columns_set.difference(found_columns_set)
+    assert len(not_found_set) == 0, "The following mandatory columns could not be found in \"{0}\"; " \
+                                    "cannot continue: {1}".format(input_tsv_file, not_found_set)

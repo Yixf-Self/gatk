@@ -27,10 +27,23 @@ class FancyStochasticOptimizer:
         _locals_.pop('params')
         return _locals_
 
+    @abstractmethod
+    def save(self, output_path: str):
+        raise NotImplementedError
+
+    @abstractmethod
+    def load(self, input_path: str):
+        raise NotImplementedError
+
 
 class FancyAdamax(FancyStochasticOptimizer):
-    def __init__(self, learning_rate=0.002, beta1=0.9, beta2=0.999, epsilon=1e-8,
-                 sample_specific=False, disable_bias_correction=False):
+    def __init__(self,
+                 learning_rate: float = 0.002,
+                 beta1: float = 0.9,
+                 beta2: float = 0.999,
+                 epsilon: float = 1e-8,
+                 sample_specific: bool = False,
+                 disable_bias_correction: bool = False):
         self.learning_rate = learning_rate
         self.beta1 = beta1
         self.beta2 = beta2
@@ -151,3 +164,11 @@ class FancyAdamax(FancyStochasticOptimizer):
             model=model, approx=approx, beta1=self.beta1, beta2=self.beta2,
             learning_rate=self.learning_rate, sample_specific=self.sample_specific,
             disable_bias_correction=self.disable_bias_correction, base_class=self)
+
+    def save(self, output_path: str):
+        from ..io import io_adamax  # lazy import to break import cycle
+        io_adamax.AdamaxMomentEstimateExporter(self, output_path)()
+
+    def load(self, input_path: str):
+        from ..io import io_adamax  # lazy import to break import cycle
+        io_adamax.AdamaxMomentEstimateImporter(self, input_path)()

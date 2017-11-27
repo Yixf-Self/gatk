@@ -9,14 +9,14 @@ from . import io_commons
 from . import io_consts
 
 interval_dtypes_dict = {
-    io_consts.contig_column_header: np.str,
-    io_consts.start_column_header: types.med_uint,
-    io_consts.end_column_header: types.med_uint
+    io_consts.contig_column_name: np.str,
+    io_consts.start_column_name: types.med_uint,
+    io_consts.end_column_name: types.med_uint
 }
 
 read_count_dtypes_dict = {
     **interval_dtypes_dict,
-    io_consts.count_column_header: types.med_uint
+    io_consts.count_column_name: types.med_uint
 }
 
 _logger = logging.getLogger(__name__)
@@ -32,9 +32,9 @@ def load_read_counts_tsv_file(read_counts_tsv_file: str,
     if output_interval_list:
         interval_list_pd = counts_pd[list(interval_dtypes_dict.keys())]
         interval_list = _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd)
-        return sample_name, counts_pd[io_consts.count_column_header].as_matrix(), interval_list
+        return sample_name, counts_pd[io_consts.count_column_name].as_matrix(), interval_list
     else:
-        return sample_name, counts_pd[io_consts.count_column_header].as_matrix(), None
+        return sample_name, counts_pd[io_consts.count_column_name].as_matrix(), None
 
 
 def load_interval_list_tsv_file(interval_list_tsv_file: str) -> List[Interval]:
@@ -80,9 +80,9 @@ def _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd: pd.Dat
     columns = [str(x) for x in interval_list_pd.columns.values]
     assert all([required_column in columns
                 for required_column in interval_dtypes_dict.keys()]), "Some columns missing"
-    for contig, start, end in zip(interval_list_pd[io_consts.contig_column_header],
-                                  interval_list_pd[io_consts.start_column_header],
-                                  interval_list_pd[io_consts.end_column_header]):
+    for contig, start, end in zip(interval_list_pd[io_consts.contig_column_name],
+                                  interval_list_pd[io_consts.start_column_name],
+                                  interval_list_pd[io_consts.end_column_name]):
         interval = Interval(contig, start, end)
         interval_list.append(interval)
 
@@ -120,9 +120,9 @@ def write_interval_list_to_tsv_file(output_file: str, interval_list: List[Interv
                             "cannot write this annotation to a .tsv file; "
                             "neglecting \"{0}\" and proceeding...".format(key))
     with open(output_file, 'w') as out:
-        header = '\t'.join([io_consts.contig_column_header,
-                            io_consts.start_column_header,
-                            io_consts.end_column_header]
+        header = '\t'.join([io_consts.contig_column_name,
+                            io_consts.start_column_name,
+                            io_consts.end_column_name]
                            + mutual_annotation_key_list)
         out.write(header + '\n')
         for interval in interval_list:
