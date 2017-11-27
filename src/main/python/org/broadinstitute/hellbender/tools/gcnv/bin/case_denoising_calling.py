@@ -166,24 +166,6 @@ if __name__ == "__main__":
     gcnvkernel.io_metadata.update_sample_metadata_collection_from_ploidy_determination_calls(
         sample_metadata_collection, args.ploidy_calls_path)
 
-    # setup sample contig ploidy array
-    baseline_copy_number_s = None
-    for contig in contigs_set:
-        if baseline_copy_number_s is None:
-            baseline_copy_number_s = sample_metadata_collection.get_sample_contig_ploidy_array(
-                contig, sample_names)
-        else:  # the target interval list has more than one contig
-            other_baseline_copy_number_s = sample_metadata_collection.get_sample_contig_ploidy_array(
-                contig, sample_names)
-            assert all(baseline_copy_number_s == other_baseline_copy_number_s), \
-                "Contig ploidy of one of more samples varies across targets; " \
-                "This can occur if modeling intervals span more than one contig and " \
-                "the germline contig ploidy changes for one or more samples across the spanned " \
-                "contigs; cannot continue."
-
-    # read depth array
-    read_depth_s = sample_metadata_collection.get_sample_read_depth_array(sample_names)
-
     # setup the inference task
     args_dict = args.__dict__
 
@@ -196,7 +178,7 @@ if __name__ == "__main__":
     inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)
     shared_workspace = gcnvkernel.DenoisingCallingWorkspace(
         denoising_config, calling_config, modeling_interval_list,
-        n_st, baseline_copy_number_s, read_depth_s)
+        n_st, sample_names, sample_metadata_collection)
     initial_params_supplier = gcnvkernel.DefaultDenoisingModelInitializer(
         denoising_config, calling_config, shared_workspace)
     task = gcnvkernel.CaseDenoisingCallingTask(
