@@ -5,7 +5,6 @@ import numpy as np
 import pymc3 as pm
 import os
 
-from .._version import __version__ as gcnvkernel_version
 from ..models.model_ploidy import PloidyWorkspace, PloidyModel
 from ..models.model_ploidy import PloidyModelConfig
 from ..models import commons as model_commons
@@ -36,10 +35,7 @@ class PloidyModelExporter:
 
     def __call__(self):
         # export gcnvkernel version
-        io_commons.export_dict_to_json_file(
-            os.path.join(self.output_path, io_consts.default_gcnvkernel_version_json_filename),
-            {'version': gcnvkernel_version},
-            {})
+        io_commons.export_gcnvkernel_version(self.output_path)
 
         # export ploidy config
         io_commons.export_dict_to_json_file(
@@ -104,13 +100,17 @@ class SamplePloidyExporter:
     def _export_sample_read_depth(sample_posterior_path: str,
                                   sample_read_depth_metadata: SampleReadDepthMetadata,
                                   extra_comment_lines: List[str] = None,
+                                  delimiter='\t',
                                   comment='#'):
         with open(os.path.join(sample_posterior_path, io_consts.default_sample_read_depth_tsv_filename), 'w') as f:
             if extra_comment_lines is not None:
                 for comment_line in extra_comment_lines:
                     f.write(comment + comment_line + '\n')
-            f.write(io_consts.global_read_depth_column_name + '\n')
-            f.write(repr(sample_read_depth_metadata.read_depth) + '\n')
+            header = delimiter.join([io_consts.global_read_depth_column_name,
+                                     io_consts.average_ploidy_column_name])
+            f.write(header + '\n')
+            f.write(delimiter.join([repr(sample_read_depth_metadata.global_read_depth),
+                                    repr(sample_read_depth_metadata.average_ploidy)]) + '\n')
 
     def __call__(self):
         for si, sample_name in enumerate(self.ploidy_workspace.sample_names):
@@ -171,4 +171,9 @@ class PloidyModelImporter:
         self.input_path = input_path
 
     def __call__(self):
+        # check if the model is created with the same gcnvkernel version
+        io_commons.check_gcnvkernel_version(
+            os.path.join(self.input_path, io_consts.default_gcnvkernel_version_json_filename))
+
+        # export model params
         io_commons.import_meanfield_global_params(self.input_path, self.ploidy_model_approx, self.ploidy_model)

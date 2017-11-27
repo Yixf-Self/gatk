@@ -50,11 +50,11 @@ group.add_argument("--output_calls_path",
                    default=argparse.SUPPRESS,
                    help="Output path to write CNV calls")
 
-group.add_argument("--output_adamax_path",
+group.add_argument("--output_opt_path",
                    type=str,
                    required=False,
                    default=argparse.SUPPRESS,
-                   help="(advanced) Output path to write adamax moment estimates")
+                   help="(advanced) Output path to write the latest optimizer state")
 
 group.add_argument("--input_model_path",
                    type=str,
@@ -68,11 +68,11 @@ group.add_argument("--input_calls_path",
                    default=argparse.SUPPRESS,
                    help="(advanced) Path to previously obtained calls to take as starting point")
 
-group.add_argument("--input_adamax_path",
+group.add_argument("--input_opt_path",
                    type=str,
                    required=False,
                    default=argparse.SUPPRESS,
-                   help="(advanced) Path to previously obtained adamax moment estimates take as starting point")
+                   help="(advanced) Path to exported optimizer state to take as the starting point")
 
 # add denoising config args
 gcnvkernel.DenoisingModelConfig.expose_args(parser)
@@ -153,9 +153,9 @@ if __name__ == "__main__":
             shared_workspace, task.continuous_model, task.continuous_model_approx,
             args.input_calls_path)()
 
-    if hasattr(args, 'input_adamax_path'):
-        logger.info("An adamax moment path was provided to use as starting point...")
-        gcnvkernel.io_adamax.AdamaxMomentEstimateImporter(task.fancy_adamax, args.input_adamax_path)()
+    if hasattr(args, 'input_opt_path'):
+        logger.info("An exported optimizer state was provided to use as starting point...")
+        task.fancy_opt.load(args.input_opt_path)
 
     # go!
     task.engage()
@@ -180,6 +180,6 @@ if __name__ == "__main__":
     shutil.copy(args.modeling_interval_list,
                 os.path.join(args.output_calls_path, gcnvkernel.io_consts.default_interval_list_filename))
 
-    # save adamax moments
-    if hasattr(args, 'output_adamax_path'):
-        gcnvkernel.io_adamax.AdamaxMomentEstimateExporter(task.fancy_adamax, args.output_adamax_path)()
+    # save optimizer state
+    if hasattr(args, 'output_opt_path'):
+        task.fancy_opt.save(args.output_opt_path)

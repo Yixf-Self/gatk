@@ -1,8 +1,8 @@
 # interval list .tsv file column names
-contig_column_header = 'CONTIG'
-start_column_header = 'START'
-end_column_header = 'END'
-count_column_header = 'COUNT'
+contig_column_name = 'CONTIG'
+start_column_name = 'START'
+end_column_name = 'END'
+count_column_name = 'COUNT'
 
 # prefix for saving posteriors for multiple samples
 sample_folder_prefix = "SAMPLE_"
@@ -13,7 +13,7 @@ copy_number_column_prefix = "COPY_NUMBER_"
 # column names for ploidy and depth .tsv outputs
 sample_name_column_name = 'SAMPLE_NAME'
 global_read_depth_column_name = 'GLOBAL_READ_DEPTH'
-contig_column_name = 'CONTIG'
+average_ploidy_column_name = 'AVERAGE_PLOIDY'
 ploidy_column_name = 'PLOIDY'
 ploidy_gq_column_name = 'PLOIDY_GQ'
 

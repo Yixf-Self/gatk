@@ -3,8 +3,7 @@ from typing import List, Set, Dict
 from .interval import Interval
 from .. import types
 import logging
-import csv
-import os
+from ..io import io_consts
 
 _logger = logging.getLogger(__name__)
 
@@ -35,6 +34,11 @@ class IntervalListMetadata:
 
 class SampleCoverageMetadata:
     """ Represents essential metadata collected from a sample's coverage profile """
+
+    mandatory_tsv_columns = {
+        io_consts.sample_name_column_name
+    }
+
     def __init__(self,
                  sample_name: str,
                  n_j: np.ndarray,
@@ -79,6 +83,11 @@ class SampleCoverageMetadata:
 
 
 class SamplePloidyMetadata:
+    mandatory_tsv_columns = {
+        io_consts.contig_column_name,
+        io_consts.ploidy_column_name
+    }
+
     """ Estimated contig ploidy for a sample """
     def __init__(self,
                  sample_name: str,
@@ -115,14 +124,27 @@ class SamplePloidyMetadata:
 
 
 class SampleReadDepthMetadata:
+
+    mandatory_tsv_columns = {
+        io_consts.global_read_depth_column_name,
+        io_consts.average_ploidy_column_name
+    }
+
     def __init__(self,
                  sample_name: str,
-                 read_depth: float):
+                 global_read_depth: float,
+                 average_ploidy: float):
+        assert global_read_depth > 0
+        assert average_ploidy > 0
         self.sample_name = sample_name
-        self.read_depth = read_depth
+        self.global_read_depth = global_read_depth
+        self.average_ploidy = average_ploidy
 
-    def get_read_depth(self):
-        return self.read_depth
+    def get_global_read_depth(self):
+        return self.global_read_depth
+
+    def get_average_ploidy(self):
+        return self.average_ploidy
 
     @staticmethod
     def generate_sample_read_depth_metadata(sample_coverage_metadata: SampleCoverageMetadata,
@@ -130,13 +152,17 @@ class SampleReadDepthMetadata:
                                             interval_list_metadata: IntervalListMetadata) -> 'SampleReadDepthMetadata':
         assert sample_coverage_metadata.sample_name == sample_ploidy_metadata.sample_name
         assert interval_list_metadata.contig_list == sample_ploidy_metadata.contig_list
+
         sample_name = sample_ploidy_metadata.sample_name
         n_total = sample_coverage_metadata.n_total
         t_j = interval_list_metadata.t_j
         ploidy_j = sample_ploidy_metadata.ploidy_j
+
         effective_total_copies = float(np.sum(t_j * ploidy_j))
-        read_depth = float(n_total) / effective_total_copies
-        return SampleReadDepthMetadata(sample_name, read_depth)
+        global_read_depth = float(n_total) / effective_total_copies
+        average_ploidy = effective_total_copies / float(np.sum(t_j))
+
+        return SampleReadDepthMetadata(sample_name, global_read_depth, average_ploidy)
 
 
 class SampleMetadataCollection:
@@ -191,7 +217,7 @@ class SampleMetadataCollection:
         return self.sample_read_depth_metadata_dict[sample_name]
 
     def get_sample_read_depth_array(self, sample_names: List[str]) -> np.ndarray:
-        return np.asarray([self.sample_read_depth_metadata_dict[sample_name].get_read_depth()
+        return np.asarray([self.sample_read_depth_metadata_dict[sample_name].get_global_read_depth()
                            for sample_name in sample_names], dtype=types.floatX)
 
     def get_sample_contig_ploidy_array(self, contig: str, sample_names: List[str]) -> np.ndarray:

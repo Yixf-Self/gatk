@@ -13,7 +13,7 @@ from typing import List, Callable, Optional, Set, Tuple, Any, Dict
 from abc import abstractmethod
 from ..inference.covergence_tracker import NoisyELBOConvergenceTracker
 from ..inference.param_tracker import ParamTrackerConfig, ParamTracker
-from ..inference.fancy_optimizers import FancyAdamax
+from ..inference import fancy_optimizers
 from ..inference.deterministic_annealing import ADVIDeterministicAnnealing
 from .. import types
 
@@ -90,32 +90,59 @@ class HybridInferenceTask(InferenceTask):
 
         p(CRVs, DRVs | observed) ~ q(CRVs) q(DRVs)
 
+    q(CRVs) is obtained via mean-field ADVI; q(DRV) is handled by an externally provided "caller"
+    (see below) and is out the scope of this class.
+
+    Usage:
+    ------
+
+    Preliminaries. Let us decompose the log joint as follows:
+
+        -log_P(CRVs, DRVs, observed) = F_c(CRVs, observed)
+                                        + F_d(DRVs, observed)
+                                            + F_cd(CRVs, DRVs, observed)
+
+    The last term in the free energy (negative log joint) is the only term with cross terms between
+    the discrete and continuous sectors.
+
     The user must supply the following components:
 
-        (1) a pm.Model that yields the DRV-posterior-expectation of the log joint,
-            E_{DRVs ~ q(DRVs)} [log_P(CRVs, DRVs, observed)]
+        (1) a pm.Model that yields the DRV-posterior-expectation of the free energy,
 
-        (2) a "sampler" that provides samples from the log emission, defined as:
-            log_emission(DRVs) = E_{CRVs ~ q(CRVs)} [log_P (observed | CRVs, DRV)]
+            F_c^{eff}(CRVs, observed) = E_{DRVs ~ q(DRVs)} [-log_P(CRVs, DRVs, observed)]
+                                        = F_c(CRVs, observed)
+                                            + E_{DRVs ~ q(DRVs)} [F_cd(CRVs, DRVs, observed)]
+                                                + E_{DRVs ~ q(DRVs)} [F_d(DRVs, observed)]
 
-        (3) a "caller" that updates q(DRVs) given log_emission(DRV); it could be as simple as using
-            the Bayes rule, or as complicated as doing iterative hierarchical HMM if DRVs are strongly
-            correlated.
+            Note: the last term is fully determined by q(DRVs) and can be dropped while performing
+            ADVI updates in the continuous sector.
+
+        (2) a "sampler" that provides samples from the cross term, which we call "log emission",
+            defined as:
+
+            log_emission(DRVs) = E_{CRVs ~ q(CRVs)} [-F_cd (CRVs, DRV, observed)]
+
+        (3) a "caller" that updates q(DRVs) given log_emission(DRV), i.e.:
+
+            q(DRVs) \propto \exp[log_emission(DRVs) - F_d(DRVs, observed)]
+
+            In practice, one does not need the complete joint posterior of DRVs: only sufficient
+            statistics, to the extent required for calculating F_c^{eff} is needed. Calculating such
+            sufficient statistics could be as simple as using the Bayes rule, or more complicated if
+            the DRVs are strongly correlated.
 
     The general implementation motif is:
 
-        (a) to store q(DRVs) as a shared theano tensor such that the the model can access it,
+        (a) to store sufficient statistics from q(DRVs) as a shared theano tensor such that the the
+            model can access it,
         (b) to store log_emission(DRVs) as a shared theano tensor (or ndarray) such that the caller
             can access it, and:
-        (c) let the caller directly update the shared q(CRVs).
+        (c) let the caller directly update the shared sufficient statistics.
 
-    This class performs mean-field ADVI to obtain q(CRVs); q(DRV) is handled by the external
-    "caller" and is out the scope of this class. This class, however, requires a CallerUpdateSummary
-    from the Caller in order to check for convergence.
     """
 
     task_modes = ['advi', 'hybrid']
-    temperature_tolerance = 0.05
+    temperature_tolerance = 1e-6
 
     def __init__(self,
                  hybrid_inference_params: 'HybridInferenceParameters',
@@ -157,9 +184,12 @@ class HybridInferenceTask(InferenceTask):
                 self.temperature: types.TensorSharedVariable = th.shared(
                     np.asarray([initial_temperature], dtype=types.floatX))
             initial_temperature = self.temperature.get_value()[0]
-            if np.abs(initial_temperature - 1.0) < 1e-10 or hybrid_inference_params.disable_annealing:  # no annealing
+            if (np.abs(initial_temperature - 1.0) < self.temperature_tolerance or
+                    hybrid_inference_params.disable_annealing):
+                # no annealing
                 temperature_update = None
             else:
+                # linear annealing
                 max_thermal_advi_iterations = self.hybrid_inference_params.max_advi_iter_first_epoch
                 max_thermal_advi_iterations += ((self.hybrid_inference_params.num_thermal_epochs - 1)
                                                 * self.hybrid_inference_params.max_advi_iter_first_epoch)
@@ -174,10 +204,10 @@ class HybridInferenceTask(InferenceTask):
 
             if 'custom_optimizer' in kwargs.keys():
                 opt = kwargs['custom_optimizer']
-                assert isinstance(opt, FancyAdamax)
-                self.fancy_adamax = opt
+                assert issubclass(type(opt), fancy_optimizers.FancyStochasticOptimizer)
+                self.fancy_opt = opt
             else:
-                self.fancy_adamax = FancyAdamax(
+                self.fancy_opt = fancy_optimizers.FancyAdamax(
                     learning_rate=hybrid_inference_params.learning_rate,
                     beta1=hybrid_inference_params.adamax_beta1,
                     beta2=hybrid_inference_params.adamax_beta2,
@@ -185,7 +215,7 @@ class HybridInferenceTask(InferenceTask):
 
             self.continuous_model_step_func = self.continuous_model_advi.objective.step_function(
                 score=True,
-                obj_optimizer=self.fancy_adamax.get_opt(self.continuous_model, self.continuous_model_approx),
+                obj_optimizer=self.fancy_opt.get_opt(self.continuous_model, self.continuous_model_approx),
                 total_grad_norm_constraint=self.hybrid_inference_params.total_grad_norm_constraint,
                 obj_n_mc=self.hybrid_inference_params.obj_n_mc,
                 more_updates=temperature_update)
