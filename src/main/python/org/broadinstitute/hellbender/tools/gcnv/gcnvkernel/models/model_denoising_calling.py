@@ -20,6 +20,7 @@ from .dists import HalfFlat
 from .theano_hmm import TheanoForwardBackward
 from .. import config, types
 from ..structs.interval import Interval, GCContentAnnotation
+from ..structs.metadata import SampleMetadataCollection
 
 _logger = logging.getLogger(__name__)
 
@@ -284,10 +285,12 @@ class DefaultPosteriorInitializer(PosteriorInitializer):
 
         log_p_alt = np.log(calling_config.p_alt)
         log_p_baseline = np.log(1.0 - calling_config.max_copy_number * calling_config.p_alt)
+        t_to_j_map = shared_workspace.t_to_j_map.get_value(borrow=True)
         for si in range(shared_workspace.num_samples):
-            sample_baseline_copy_number = shared_workspace.baseline_copy_number_s[si]
+            sample_baseline_copy_number_j = shared_workspace.baseline_copy_number_sj[si, :]
             log_q_c_stc[si, :, :] = log_p_alt
-            log_q_c_stc[si, :, sample_baseline_copy_number] = log_p_baseline
+            for ti in range(shared_workspace.num_intervals):
+                log_q_c_stc[si, ti, sample_baseline_copy_number_j[t_to_j_map[ti]]] = log_p_baseline
         shared_workspace.log_q_c_stc = th.shared(log_q_c_stc, name="log_q_c_stc", borrow=config.borrow_numpy)
 
 
@@ -299,40 +302,48 @@ class DenoisingCallingWorkspace:
                  calling_config: CopyNumberCallingConfig,
                  interval_list: List[Interval],
                  n_st: np.ndarray,
-                 baseline_copy_number_s: np.ndarray,
-                 global_read_depth_s: np.ndarray,
+                 sample_names: List[str],
+                 sample_metadata_collection: SampleMetadataCollection,
                  posterior_initializer: PosteriorInitializer = DefaultPosteriorInitializer):
-        """
-        Note:
-            - sample_names must be in the same order as the rows of n_st
-            - sample names in sample_metadata_collection must match those in sample_names
-
-        """
         self.denoising_config = denoising_config
         self.calling_config = calling_config
         self.interval_list = interval_list
+        self.sample_names = sample_names
 
         assert n_st.ndim == 2, "read counts matrix must be a dim=2 ndarray with shape (num_samples, num_intervals)"
 
         self.num_samples: int = n_st.shape[0]
         self.num_intervals: int = n_st.shape[1]
 
+        assert self.num_intervals >= 2, "at least two intervals must be provided"
         assert len(interval_list) == self.num_intervals,\
             "the length of the interval list is incompatible with the shape of the read counts matrix"
 
-        assert baseline_copy_number_s.ndim == 1, "TODO informative message"
-        assert baseline_copy_number_s.size == self.num_samples, "TODO informative message"
-        assert baseline_copy_number_s.dtype in types.uint_dtypes, "TODO informative message"
-        assert np.max(baseline_copy_number_s) <= calling_config.max_copy_number, "TODO informative message"
-        self.baseline_copy_number_s = baseline_copy_number_s.astype(types.small_uint)
+        # a list of unique contigs appearing in the interval list; the ordering is arbitrary and
+        # is only used internally
+        # Note: j is the index subscript used for contig index hereafter
+        self.contig_list = list({interval.contig for interval in interval_list})
+        self.num_contigs = len(self.contig_list)
+        contig_to_j_map = {contig: self.contig_list.index(contig) for contig in self.contig_list}
+        t_to_j_map = np.asarray([contig_to_j_map[interval.contig] for interval in interval_list],
+                                dtype=types.small_uint)
+        self.t_to_j_map: types.TensorSharedVariable = th.shared(
+            t_to_j_map, name="t_to_j_map", borrow=config.borrow_numpy)
 
-        assert global_read_depth_s.ndim == 1, "TODO informative message"
-        assert global_read_depth_s.size == self.num_samples, "TODO informative message"
-        self.global_read_depth_s = global_read_depth_s.astype(types.floatX)
+        self.global_read_depth_s, average_ploidy_s, self.baseline_copy_number_sj =\
+            DenoisingCallingWorkspace._get_baseline_copy_number_and_read_depth(
+                sample_metadata_collection, sample_names, self.contig_list)
 
-        # read counts array as a shared theano tensor
+        max_baseline_copy_number = np.max(self.baseline_copy_number_sj)
+        assert max_baseline_copy_number <= calling_config.max_copy_number,\
+            "The highest contig ploidy ({0}) must be smaller or equal to the highest copy number state ({1}); " \
+            "cannot continue".format(max_baseline_copy_number, calling_config.max_copy_number)
+
+        # shared theano tensors from the input data
         self.n_st: types.TensorSharedVariable = th.shared(
             n_st.astype(types.med_uint), name="n_st", borrow=config.borrow_numpy)
+        self.average_ploidy_s: types.TensorSharedVariable = th.shared(
+            average_ploidy_s.astype(types.floatX), name="average_ploidy_s", borrow=config.borrow_numpy)
 
         # distance between subsequent intervals
         self.dist_t: types.TensorSharedVariable = th.shared(
@@ -511,6 +522,34 @@ class DenoisingCallingWorkspace:
         theano_gc_matrix: tst.SparseConstant = tst.as_sparse(scipy_gc_matrix)
         return theano_gc_matrix
 
+    @staticmethod
+    def _get_baseline_copy_number_and_read_depth(sample_metadata_collection: SampleMetadataCollection,
+                                                 sample_names: List[str],
+                                                 contig_list: List[str])\
+            -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        assert sample_metadata_collection.all_samples_have_read_depth_metadata(sample_names), \
+            "Some samples do not have read depth metadata; cannot continue"
+        assert sample_metadata_collection.all_samples_have_ploidy_metadata(sample_names), \
+            "Some samples do not have ploidy metadata; cannot continue"
+        num_samples = len(sample_names)
+        num_contigs = len(contig_list)
+
+        global_read_depth_s = np.zeros((num_samples,), dtype=types.floatX)
+        average_ploidy_s = np.zeros((num_samples,), dtype=types.floatX)
+        baseline_copy_number_sj = np.zeros((num_samples, num_contigs), dtype=types.small_uint)
+
+        for si, sample_name in enumerate(sample_names):
+            sample_read_depth_metadata = sample_metadata_collection.get_sample_read_depth_metadata(sample_name)
+            sample_ploidy_metadata = sample_metadata_collection.get_sample_ploidy_metadata(sample_name)
+
+            global_read_depth_s[si] = sample_read_depth_metadata.global_read_depth
+            average_ploidy_s[si] = sample_read_depth_metadata.average_ploidy
+            sample_baseline_copy_number_j = np.asarray([sample_ploidy_metadata.get_contig_ploidy(contig)
+                                                        for contig in contig_list], dtype=types.small_uint)
+            baseline_copy_number_sj[si, :] = sample_baseline_copy_number_j[:]
+
+        return global_read_depth_s, average_ploidy_s, baseline_copy_number_sj
+
 
 class InitialModelParametersSupplier:
     def __init__(self,
@@ -645,8 +684,8 @@ class DenoisingModel(GeneralizedContinuousModel):
         # useful expressions
         bias_st = tt.exp(log_bias_st)
 
-        # todo in principle, this term must be multiplied by the globally-average ploidy
-        mean_mapping_error_correction_s: types.TheanoVector = eps * read_depth_s
+        # the expect number of erroneously mapped reads
+        mean_mapping_error_correction_s: types.TheanoVector = eps * read_depth_s * shared_workspace.average_ploidy_s
 
         mu_stc = ((1.0 - eps) * read_depth_s.dimshuffle(0, 'x', 'x')
                   * bias_st.dimshuffle(0, 1, 'x')
@@ -797,16 +836,20 @@ class HHMMClassAndCopyNumberBasicCaller:
         self.temperature = temperature
 
         # generate sample-specific inventory of copy number priors according to their baseline copy number state
-        pi_skc = np.zeros((shared_workspace.num_samples, calling_config.num_copy_number_classes,
-                           calling_config.num_copy_number_states), dtype=types.floatX)
+        pi_sjkc = np.zeros((shared_workspace.num_samples,
+                            shared_workspace.num_contigs,
+                            calling_config.num_copy_number_classes,
+                            calling_config.num_copy_number_states), dtype=types.floatX)
         p_baseline = 1.0 - calling_config.max_copy_number * calling_config.p_alt
         for si in range(shared_workspace.num_samples):
-            # the ref class
-            pi_skc[si, 0, :] = calling_config.p_alt
-            pi_skc[si, 0, shared_workspace.baseline_copy_number_s[si]] = p_baseline
-            # the flat class
-            pi_skc[si, 1, :] = 1.0 / calling_config.num_copy_number_states
-        self.pi_skc: types.TensorSharedVariable = th.shared(pi_skc, name='pi_skc', borrow=config.borrow_numpy)
+            for j in range(shared_workspace.num_contigs):
+                baseline_state = shared_workspace.baseline_copy_number_sj[si, j]
+                # the ref class
+                pi_sjkc[si, j, 0, :] = calling_config.p_alt
+                pi_sjkc[si, j, 0, baseline_state] = p_baseline
+                # the flat class
+                pi_sjkc[si, j, 1, :] = 1.0 / calling_config.num_copy_number_states
+        self.pi_sjkc: types.TensorSharedVariable = th.shared(pi_sjkc, name='pi_sjkc', borrow=config.borrow_numpy)
 
         # compiled function for forward-backward updatesof copy number posterior
         self._hmm_q_copy_number = TheanoForwardBackward(None, self.inference_params.caller_admixing_rate)
@@ -858,8 +901,8 @@ class HHMMClassAndCopyNumberBasicCaller:
         num_calling_processes = self.calling_config.num_calling_processes
 
         def _run_single_sample_fb(_sample_index: int):
-            pi_kc = self.pi_skc.get_value(borrow=True)[_sample_index, ...]
-            hmm_spec = self._get_copy_number_hmm_specs_theano_func(pi_kc)
+            pi_jkc = self.pi_sjkc.get_value(borrow=True)[_sample_index, ...]
+            hmm_spec = self._get_copy_number_hmm_specs_theano_func(pi_jkc)
             log_prior_c = hmm_spec[0]
             log_trans_tcc = hmm_spec[1]
             prev_log_posterior_tc = ws.log_q_c_stc.get_value(borrow=True)[_sample_index, ...]
@@ -936,31 +979,37 @@ class HHMMClassAndCopyNumberBasicCaller:
 
         Note:
             In the following, we use "a" and "b" subscripts in the variable names to refer to the departure
-            and destination states, respectively. Like before, "t" and "k" denote interval and class.
+            and destination states, respectively. Like before, "t" and "k" denote interval and class, and "j"
+            refers to contig index.
         """
         # shorthands
-        pi_kc = tt.matrix('pi_kc')
+        pi_jkc = tt.tensor3('pi_jkc')
         dist_t = self.shared_workspace.dist_t
         log_q_tau_tk = self.shared_workspace.log_q_tau_tk
         cnv_coherence_length = self.calling_config.cnv_coherence_length
         num_copy_number_states = self.calling_config.num_copy_number_states
+        t_to_j_map = self.shared_workspace.t_to_j_map
 
         # log prior probability for the first interval
-        log_prior_c_first_interval = tt.dot(tt.log(pi_kc.T), tt.exp(log_q_tau_tk[0, :]))
+        log_prior_c_first_interval = tt.dot(tt.log(pi_jkc[t_to_j_map[0], :, :].T), tt.exp(log_q_tau_tk[0, :]))
         log_prior_c_first_interval -= pm.logsumexp(log_prior_c_first_interval)
 
         # log transition matrix
         stay_t = tt.exp(-dist_t / cnv_coherence_length)  # todo can be cached in the workspace
         not_stay_t = tt.ones_like(stay_t) - stay_t
         delta_ab = tt.eye(num_copy_number_states)
+
+        # map contig to interval and obtain pi_tkc for the rest of the targets
+        pi_tkc = pi_jkc[t_to_j_map[1:], :, :]
+
         # todo use logaddexp
-        log_trans_tkab = tt.log(not_stay_t.dimshuffle(0, 'x', 'x', 'x') * pi_kc.dimshuffle('x', 0, 'x', 1)
+        log_trans_tkab = tt.log(not_stay_t.dimshuffle(0, 'x', 'x', 'x') * pi_tkc.dimshuffle(0, 1, 'x', 2)
                                 + stay_t.dimshuffle(0, 'x', 'x', 'x') * delta_ab.dimshuffle('x', 'x', 0, 1))
         q_tau_tkab = tt.exp(log_q_tau_tk[1:, :]).dimshuffle(0, 1, 'x', 'x')
         log_trans_tab = tt.sum(q_tau_tkab * log_trans_tkab, axis=1)
         log_trans_tab -= pm.logsumexp(log_trans_tab, axis=2)
 
-        return th.function(inputs=[pi_kc], outputs=[log_prior_c_first_interval, log_trans_tab])
+        return th.function(inputs=[pi_jkc], outputs=[log_prior_c_first_interval, log_trans_tab])
 
     @th.configparser.change_flags(compute_test_value="off")
     def _get_update_log_class_emission_tk_theano_func(self):
@@ -982,7 +1031,8 @@ class HHMMClassAndCopyNumberBasicCaller:
         # shorthands
         dist_t = self.shared_workspace.dist_t
         q_c_stc = tt.exp(self.shared_workspace.log_q_c_stc)
-        pi_skc = self.pi_skc
+        pi_sjkc = self.pi_sjkc
+        t_to_j_map = self.shared_workspace.t_to_j_map
         cnv_coherence_length = self.calling_config.cnv_coherence_length
         num_copy_number_states = self.calling_config.num_copy_number_states
 
@@ -995,17 +1045,21 @@ class HHMMClassAndCopyNumberBasicCaller:
         log_class_emission_cum_sum_tk = tt.zeros((self.shared_workspace.num_intervals - 1,
                                                   self.calling_config.num_copy_number_classes), dtype=types.floatX)
 
-        def inc_log_class_emission_tk_except_for_first_interval(pi_kc, q_c_tc, cum_sum_tk):
+        def inc_log_class_emission_tk_except_for_first_interval(pi_jkc, q_c_tc, cum_sum_tk):
             """
             Adds the contribution of a given sample to the log class emission
-            :param pi_kc: copy number prior inventory for the sample
+            :param pi_jkc: copy number prior inventory for the sample
             :param q_c_tc: copy number posteriors for the sample
             :param cum_sum_tk: current cumulative sum of log class emission
             :return: updated cumulative sum of log class emission
             """
+
+            # map contigs to targets (starting from the second interval)
+            pi_tkc = pi_jkc[t_to_j_map[1:], :, :]
+
             # todo use logaddexp
             log_trans_tkab = tt.log(
-                not_stay_t.dimshuffle(0, 'x', 'x', 'x') * pi_kc.dimshuffle('x', 0, 'x', 1)
+                not_stay_t.dimshuffle(0, 'x', 'x', 'x') * pi_tkc.dimshuffle(0, 1, 'x', 2)
                 + stay_t.dimshuffle(0, 'x', 'x', 'x') * delta_ab.dimshuffle('x', 'x', 0, 1))
             xi_tab = q_c_tc[:-1, :].dimshuffle(0, 1, 'x') * q_c_tc[1:, :].dimshuffle(0, 'x', 1)
             current_log_class_emission_tk = tt.sum(tt.sum(
@@ -1013,13 +1067,16 @@ class HHMMClassAndCopyNumberBasicCaller:
             return cum_sum_tk + current_log_class_emission_tk
 
         reduce_output = th.reduce(inc_log_class_emission_tk_except_for_first_interval,
-                                  sequences=[pi_skc, q_c_stc],
+                                  sequences=[pi_sjkc, q_c_stc],
                                   outputs_info=[log_class_emission_cum_sum_tk])
         log_class_emission_tk_except_for_first_interval = reduce_output[0]
 
-        log_class_emission_k_first = tt.sum(tt.sum(
-            tt.log(pi_skc) * q_c_stc[:, 0, :].dimshuffle(0, 'x', 1), axis=0), axis=-1)
+        # the first interval
+        pi_skc_first = pi_sjkc[:, t_to_j_map[0], :, :]
+        q_skc_first = q_c_stc[:, 0, :].dimshuffle(0, 'x', 1)
+        log_class_emission_k_first = tt.sum(tt.sum(tt.log(pi_skc_first) * q_skc_first, axis=0), axis=-1)
 
+        # concatenate first and rest
         log_class_emission_tk = tt.concatenate((log_class_emission_k_first.dimshuffle('x', 0),
                                                 log_class_emission_tk_except_for_first_interval))
 
