@@ -72,6 +72,9 @@ public final class HelpConstants {
     public final static String DOC_CAT_EXAMPLE = "Example Tools";
     public final static String DOC_CAT_EXAMPLE_SUMMARY = "Example tools that show developers how to implement new tools";
 
+    public final static String DOC_CAT_RNA = "RNA-Specific Tools";
+    public final static String DOC_CAT_RNA_SUMMARY = "Tools intended to be used for processing RNA data.";
+
     /**
      * List of "supercategory" values used for doc purposes. Every doc group name can/should be put into
      * one of the following supercategories.

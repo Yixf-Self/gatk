@@ -25,8 +25,21 @@ import java.util.Map;
 
 /**
  * Phred-scaled p-value for exact test of excess heterozygosity.
- * Using implementation from
+ *
+ * <p>This annotation estimates the probability of the called samples exhibiting excess heterozygosity with respect to the null hypothesis that the samples are unrelated. The higher the score, the
+ * higher the chance that the variant is a technical artifact or that there is consanguinuity among the samples. In
+ * contrast to Inbreeding Coefficient, there is no minimal number of samples for this annotation. If samples are known to be related, a pedigree file can be provided so
+ * that the calculation is only performed on founders and offspring are excluded.</p>
+ *
+ * <h3>Statistical notes</h3>
+ * <p>This annotation uses the implementation from
  * Wigginton JE, Cutler DJ, Abecasis GR. A Note on Exact Tests of Hardy-Weinberg Equilibrium. American Journal of Human Genetics. 2005;76(5):887-893.
+ *
+ * <h3>Caveat</h3>
+ * <p>The Excess Heterozygosity annotation can only be calculated for diploid samples.</p>
+ *
+ * <h3>Related annotations</h3>
+ * <p><b>InbreedingCoeff</b> also describes the heterozygosity of the called samples, though without explicitly taking into account the number of samples</p>
  */
 @DocumentedFeature(groupName=HelpConstants.DOC_CAT_ANNOTATORS, groupSummary=HelpConstants.DOC_CAT_ANNOTATORS_SUMMARY, summary="Phred-scaled p-value for exact test of excess heterozygosity (ExcessHet)")
 public final class ExcessHet extends InfoFieldAnnotation implements StandardAnnotation {

@@ -73,7 +73,7 @@ public final class ASEReadCounterIntegrationTest extends CommandLineProgramTest 
     @Test
     public void testASEReadCounterFileFormat() throws Exception {
         IntegrationTestSpec spec = new IntegrationTestSpec(
-                "-R " + b37_reference_20_21 + " -I " + largeFileTestDir + "NA12878.RNAseq.bam -V " + aseTestDir + "NA12878.chr20_2444518_2637800.RNAseq.SYNONYMOUS_CODING.vcf -mmq 60 -mbq 10 -O %s --outputFormat CSV",
+                "-R " + b37_reference_20_21 + " -I " + largeFileTestDir + "NA12878.RNAseq.bam -V " + aseTestDir + "NA12878.chr20_2444518_2637800.RNAseq.SYNONYMOUS_CODING.vcf -mmq 60 -mbq 10 -O %s --output-format CSV",
                 Arrays.asList(aseTestDir + "expected.ASEReadCount.FileFormat.table"));
         spec.executeTest("test high mq with no read passing", this);
     }

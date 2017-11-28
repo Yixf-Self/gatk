@@ -2,9 +2,11 @@ package org.broadinstitute.hellbender.tools.walkers.rnaseq;
 
 import htsjdk.samtools.*;
 import htsjdk.samtools.reference.IndexedFastaSequenceFile;
+import org.broadinstitute.barclay.argparser.Advanced;
 import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
+import org.broadinstitute.hellbender.cmdline.programgroups.RNAProgramGroup;
 import org.broadinstitute.hellbender.cmdline.programgroups.ReadProgramGroup;
 import org.broadinstitute.hellbender.engine.FeatureContext;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
@@ -32,17 +34,36 @@ import static org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions.
 
 /**
  *
- * Splits reads that contain Ns in their cigar string (e.g. spanning splicing events).
+ * Splits reads that contain Ns in their cigar string (e.g. spanning splicing events in RNAseq data).
  *
  * Identifies all N cigar elements and creates k+1 new reads (where k is the number of N cigar elements).
  * The first read includes the bases that are to the left of the first N element, while the part of the read that is to the right of the N
- * (including the Ns) is hard clipped and so on for the rest of the new reads.
+ * (including the Ns) is hard clipped and so on for the rest of the new reads. Used for post-processing RNA reads aligned against the full reference.
+ *
+ * <h3>Input</h3>
+ *  <p>
+ *	    BAM file
+ *  </p>
+ *
+ *
+ * <h3>Output</h3>
+ *  <p>
+ *      BAM file with reads split at N CIGAR elements and CIGAR strings updated.
+ *  </p>
+ *
+ * <h3>Usage example</h3>
+ *  <pre>
+ *    ./gatk-launch SplitNCigarReads \
+ *      -R Homo_sapiens_assembly38.fasta \
+ *      -I input.bam \
+ *      -o output.bam
+ *  </pre>
  */
 @DocumentedFeature
 @CommandLineProgramProperties(
         summary = "Splits reads that contain Ns in their cigar string (e.g. spanning splicing events).",
         oneLineSummary = "Split Reads with N in Cigar",
-        programGroup = ReadProgramGroup.class
+        programGroup = RNAProgramGroup.class
 )
 public final class SplitNCigarReads extends TwoPassReadWalker {
 
@@ -52,23 +73,31 @@ public final class SplitNCigarReads extends TwoPassReadWalker {
     static final String[] TAGS_TO_REMOVE = {"NM","MD","NH"};
     static final String MATE_CIGAR_TAG = "MC";
 
-    @Argument(fullName = OUTPUT_LONG_NAME, shortName = OUTPUT_SHORT_NAME, doc="Write output to this BAM filename instead of STDOUT")
+    @Argument(fullName = OUTPUT_LONG_NAME, shortName = OUTPUT_SHORT_NAME, doc="Write output to this BAM filename")
     File OUTPUT;
 
     /**
      * This flag tells GATK to refactor cigar string with NDN elements to one element. It intended primarily for use in
-     * a RNAseq pipeline since the problem might come up when using RNAseq aligner such as Tophat2 with provided transcriptoms.
+     * a RNAseq pipeline since the problem might come up when using RNAseq aligner such as Tophat2 with provided transcriptomes.
      * You should only use this if you know that your reads have that problem.
      */
-    @Argument(fullName = "refactor_NDN_cigar_string", shortName = "fixNDN", doc = "refactor cigar string with NDN elements to one element", optional = true)
+    @Argument(fullName = "refactor-cigar-string", shortName = "fixNDN", doc = "refactor cigar string with NDN elements to one element", optional = true)
     boolean REFACTOR_NDN_CIGAR_READS = false;
+
+    /**
+     * This flag turns off the mapping quality 255 -> 60 read transformer. The transformer is on by default to ensure that
+     * uniquely mapping reads assigned STAR's default 255 MQ aren't filtered out by HaplotypeCaller.
+     */
+    @Argument(fullName = "skip-mapping-quality-transform", shortName = "skipMQtransform", doc = "skip the 255 -> 60 MQ read transform", optional = true)
+    boolean SKIP_MQ_TRANSFORM = false;
 
     /**
      * For expert users only!  To minimize memory consumption you can lower this number, but then the tool may skip
      * overhang fixing in regions with too much coverage.  Just make sure to give Java enough memory!  4Gb should be
      * enough with the default value.
      */
-    @Argument(fullName="maxReadsInMemory", shortName="maxInMemory", doc="max reads allowed to be kept in memory at a time by the BAM writer", optional=true)
+    @Advanced
+    @Argument(fullName="max-reads-in-memory", shortName="maxInMemory", doc="max reads allowed to be kept in memory at a time by the BAM writer", optional=true)
     int MAX_RECORDS_IN_MEMORY = 150000;
 
     /**
@@ -76,19 +105,19 @@ public final class SplitNCigarReads extends TwoPassReadWalker {
      * It is still possible in some cases that the overhang could get clipped if the number of mismatches do not exceed this
      * value, e.g. if most of the overhang mismatches.
      */
-    @Argument(fullName="maxMismatchesInOverhang", shortName="maxMismatches", doc="max number of mismatches allowed in the overhang", optional=true)
+    @Argument(fullName="max-mismatches-in-overhang", shortName="maxMismatches", doc="max number of mismatches allowed in the overhang", optional=true)
     int MAX_MISMATCHES_IN_OVERHANG = 1;
 
     /**
      * If there are more than this many bases in the overhang, we won't try to hard-clip them out
      */
-    @Argument(fullName="maxBasesInOverhang", shortName="maxOverhang", doc="max number of bases allowed in the overhang", optional=true)
+    @Argument(fullName="max-bases-in-overhang", shortName="maxOverhang", doc="max number of bases allowed in the overhang", optional=true)
     int MAX_BASES_TO_CLIP = 40;
 
-    @Argument(fullName="doNotFixOverhangs", shortName="doNotFixOverhangs", doc="do not have the walker soft-clip overhanging sections of the reads", optional=true)
+    @Argument(fullName="do-not-fix-overhangs", shortName="doNotFixOverhangs", doc="do not have the walker soft-clip overhanging sections of the reads", optional=true)
     boolean doNotFixOverhangs = false;
 
-    @Argument(fullName="processSecondaryAlignments", shortName="processSecondaryAlignments", doc="have the walker split secondary alignments (will still repair MC tag without it)", optional=true)
+    @Argument(fullName="process-secondary-alignments", shortName="processSecondaryAlignments", doc="have the walker split secondary alignments (will still repair MC tag without it)", optional=true)
     boolean processSecondaryAlignments = false;
 
     @Override
@@ -105,6 +134,11 @@ public final class SplitNCigarReads extends TwoPassReadWalker {
     @Override
     public List<ReadFilter> getDefaultReadFilters() {
         return Collections.singletonList(ReadFilterLibrary.ALLOW_ALL_READS);
+    }
+
+    @Override
+    public ReadTransformer makePostReadFilterTransformer(){
+        return ReadTransformer.identity();
     }
 
     @Override
