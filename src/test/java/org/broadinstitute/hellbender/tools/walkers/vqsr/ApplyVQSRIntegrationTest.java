@@ -100,8 +100,8 @@ public class ApplyVQSRIntegrationTest extends CommandLineProgramTest {
         args.add("20:1000100-1000500");
         args.add("-mode");
         args.add("BOTH");
-        args.add("--excludeFiltered");
-        args.add("-ts_filter_level");
+        args.add("-exclude-filtered");
+        args.add("-truth-sensitivity-filter-level");
         args.add("90.0");
         args.add("-tranchesFile ");
         args.add(getToolTestDataDir() + "VQSR.mixedTest.tranches");
