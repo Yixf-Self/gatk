@@ -437,7 +437,7 @@ public class Main {
         }
     }
 
-    private void printUsage(final PrintStream destinationStream, final Set<Class<?>> classes, final String commandLineName) {
+    private static void printUsage(final PrintStream destinationStream, final Set<Class<?>> classes, final String commandLineName) {
         final StringBuilder builder = new StringBuilder();
         builder.append(BOLDRED + "USAGE: " + commandLineName + " " + GREEN + "<program name>" + BOLDRED + " [-h]\n\n" + KNRM)
                 .append(BOLDRED + "Available Programs:\n" + KNRM);
@@ -510,7 +510,7 @@ public class Main {
     /**
      * @return A display name to be used for the tool who's class is {@code clazz}.
      */
-    protected String getDisplayNameForToolClass(Class<?> clazz) {
+    protected static String getDisplayNameForToolClass(Class<?> clazz) {
         return RuntimeUtils.toolDisplayName(clazz);
     }
 
