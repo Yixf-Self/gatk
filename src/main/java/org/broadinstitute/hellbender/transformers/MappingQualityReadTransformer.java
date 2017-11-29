@@ -8,8 +8,10 @@ import org.broadinstitute.hellbender.utils.read.GATKRead;
  *
  */
 public class MappingQualityReadTransformer implements ReadTransformer {
-    private static int fromQuality = 255;
-    private static int toQuality = 60;
+    private static final long serialVersionUID = 1L;
+
+    private int fromQuality = 255;
+    private int toQuality = 60;
 
     public MappingQualityReadTransformer(final int fromQuality, final int toQuality) {
         this.fromQuality = fromQuality;

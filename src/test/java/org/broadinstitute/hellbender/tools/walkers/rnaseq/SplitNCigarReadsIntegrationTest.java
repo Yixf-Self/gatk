@@ -59,7 +59,8 @@ public final class SplitNCigarReadsIntegrationTest extends CommandLineProgramTes
     @Test //regression test for https://github.com/broadinstitute/gatk/pull/1853
     public void testSplitsOfUnpairedAndUnmappedReads() throws Exception {
         IntegrationTestSpec spec = new IntegrationTestSpec(
-                "-R" + b37_reference_20_21 + " -I " + largeFileTestDir + "K-562.duplicateMarked.chr20.bam -O %s --process-secondary-alignments",
+                "-R" + b37_reference_20_21 + " -I " + largeFileTestDir + "K-562.duplicateMarked.chr20.bam -O %s --process-secondary-alignments " +
+                        "-skipMQtransform", //this is TopHat data so a 255 does actually mean the MQ is unavailable
                 Arrays.asList(largeFileTestDir + "expected.K-562.splitNCigarReads.chr20.bam"));
         spec.executeTest("regression test for unmapped and unpaired reads", this);
     }
