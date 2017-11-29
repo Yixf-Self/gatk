@@ -90,7 +90,9 @@ public final class GermlineCNVCaller extends CommandLineProgram {
     }
 
     public static final String COHORT_DENOISING_CALLING_PYTHON_SCRIPT = "cohort_denoising_calling.py";
-    public static final String CASE_SAMPLE_CALLING_PYTHON_SCRIPT = "case_sample_calling.py";
+    public static final String CASE_SAMPLE_CALLING_PYTHON_SCRIPT = "case_denoising_calling.py";
+
+    public static final String INPUT_MODEL_INTERVAL_FILE = "interval_list.tsv";     //name of the interval file output by the python code in the model directory
 
     public static final String MODEL_PATH_SUFFIX = "-model";
     public static final String CALLS_PATH_SUFFIX = "-calls";
@@ -171,27 +173,17 @@ public final class GermlineCNVCaller extends CommandLineProgram {
 
     private Mode mode;
     private LinkedHashSet<SimpleInterval> intervals;
+    private File intervalsFile;
 
     @Override
     protected Object doWork() {
         setModeAndValidateArguments();
 
         //read in count files, validate they contain specified subset of intervals, and output count files for these intervals to temporary files
-        final File intervalsFile = IOUtils.createTempFile("intervals", ".tsv");
-        if (inputAnnotatedIntervalsFile == null) {
-            new SimpleIntervalCollection(new ArrayList<>(intervals)).write(intervalsFile);
-        } else {
-            final AnnotatedIntervalCollection inputAnnotatedIntervals = new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile);
-            final AnnotatedIntervalCollection subsetAnnotatedIntervals = new AnnotatedIntervalCollection(
-                    inputAnnotatedIntervals.getRecords().stream()
-                            .filter(i -> intervals.contains(i.getInterval()))
-                            .collect(Collectors.toList()));
-            subsetAnnotatedIntervals.write(intervalsFile);
-        }
-        final List<File> intervalSubsetReadCountFiles = writeIntervalSubsetReadCountFiles(inputReadCountFiles);
+        final List<File> intervalSubsetReadCountFiles = writeIntervalSubsetReadCountFiles();
 
         //call python inference code
-        final boolean pythonReturnCode = executeGermlineCNVCallerPythonScript(intervalSubsetReadCountFiles, intervalsFile);
+        final boolean pythonReturnCode = executeGermlineCNVCallerPythonScript(intervalSubsetReadCountFiles);
 
         if (!pythonReturnCode) {
             throw new UserException("Python return code was non-zero.");
@@ -233,6 +225,18 @@ public final class GermlineCNVCaller extends CommandLineProgram {
                 Utils.validateArg(new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile).getIntervals().containsAll(intervals),
                         "Annotated-intervals file does not contain all specified intervals.");
             }
+
+            intervalsFile = IOUtils.createTempFile("intervals", ".tsv");    //in cohort mode, intervals are specified via -L; we write them to a temporary file
+            if (inputAnnotatedIntervalsFile == null) {
+                new SimpleIntervalCollection(new ArrayList<>(intervals)).write(intervalsFile);
+            } else {
+                final AnnotatedIntervalCollection inputAnnotatedIntervals = new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile);
+                final AnnotatedIntervalCollection subsetAnnotatedIntervals = new AnnotatedIntervalCollection(
+                        inputAnnotatedIntervals.getRecords().stream()
+                                .filter(i -> intervals.contains(i.getInterval()))
+                                .collect(Collectors.toList()));
+                subsetAnnotatedIntervals.write(intervalsFile);
+            }
         } else {
             logger.info("A single sample was provided, running in case mode...");
             mode = Mode.CASE;
@@ -250,6 +254,10 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             }
 
             Utils.nonNull(inputModelDir, "An input denoising-model directory must be provided in case mode.");
+
+            intervalsFile = new File(inputModelDir, INPUT_MODEL_INTERVAL_FILE);             //in case mode, intervals are specified via a file in the input model directory
+            IOUtils.canReadFile(intervalsFile);
+            intervals = new LinkedHashSet<>(new SimpleIntervalCollection(intervalsFile).getIntervals());
         }
 
         Utils.nonNull(outputPrefix);
@@ -265,7 +273,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         return new LinkedHashSet<>(readCounts.getIntervals());
     }
 
-    private List<File> writeIntervalSubsetReadCountFiles(final List<File> inputReadCountFiles) {
+    private List<File> writeIntervalSubsetReadCountFiles() {
         logger.info("Validating and aggregating metadata from input read-count files...");
         final int numSamples = inputReadCountFiles.size();
         final ListIterator<File> inputReadCountFilesIterator = inputReadCountFiles.listIterator();
@@ -288,14 +296,12 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         return intervalSubsetReadCountFiles;
     }
 
-    private boolean executeGermlineCNVCallerPythonScript(final List<File> intervalSubsetReadCountFiles,
-                                                         final File intervalsFile) {
+    private boolean executeGermlineCNVCallerPythonScript(final List<File> intervalSubsetReadCountFiles) {
         final PythonScriptExecutor executor = new PythonScriptExecutor(true);
         final String outputDirArg = Utils.nonEmpty(outputDir).endsWith(File.separator) ? outputDir : outputDir + File.separator;    //add trailing slash if necessary
 
         //add required arguments
         final List<String> arguments = new ArrayList<>(Arrays.asList(
-                "--modeling_interval_list=" + intervalsFile.getAbsolutePath(),  //these are the annotated intervals, if provided
                 "--ploidy_calls_path=" + inputContigPloidyCallsDir,
                 "--output_calls_path=" + outputDirArg + outputPrefix + CALLS_PATH_SUFFIX));
         arguments.addAll(germlineDenoisingArgumentCollection.generatePythonArguments());
@@ -311,11 +317,11 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         final String script;
         if (mode == Mode.COHORT) {
             script = COHORT_DENOISING_CALLING_PYTHON_SCRIPT;
+            arguments.add("--modeling_interval_list=" + intervalsFile.getAbsolutePath());   //these are the annotated intervals, if provided
             arguments.add("--output_model_path=" + outputDirArg + outputPrefix + MODEL_PATH_SUFFIX);
             if (inputModelDir != null) {
                 arguments.add("--input_model_path=" + inputModelDir);
             }
-
         } else {
             script = CASE_SAMPLE_CALLING_PYTHON_SCRIPT;
             arguments.add("--input_model_path=" + inputModelDir);
@@ -326,19 +332,19 @@ public final class GermlineCNVCaller extends CommandLineProgram {
                 arguments);
     }
 
-    private static final class GermlineDenoisingArgumentCollection implements Serializable {
-        private enum GCExpectationMode {
-            MAP("map"),
-            EXACT("exact"),
-            HYBRID("hybrid");
+    private enum GCExpectationMode {
+        MAP("map"),
+        EXACT("exact"),
+        HYBRID("hybrid");
 
-            final String pythonArgumentString;
+        final String pythonArgumentString;
 
-            GCExpectationMode(final String pythonArgumentString) {
-                this.pythonArgumentString = pythonArgumentString;
-            }
+        GCExpectationMode(final String pythonArgumentString) {
+            this.pythonArgumentString = pythonArgumentString;
         }
+    }
 
+    private final class GermlineDenoisingArgumentCollection implements Serializable {
         private static final long serialVersionUID = 1L;
 
         @Argument(
@@ -435,23 +441,27 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         private boolean disableBiasFactorsInFlatClass = false;
 
         private List<String> generatePythonArguments() {
-            return Arrays.asList(
-                    String.format("--max_bias_factors=%d", maxBiasFactors),
+            final List<String> arguments = new ArrayList<>(Arrays.asList(
                     String.format("--mapping_error_rate=%f", mappingErrorRate),
                     String.format("--psi_t_scale=%f", intervalPsiScale),
-                    String.format("--psi_s_scale=%f", samplePsiScale),
                     String.format("--depth_correction_tau=%f", depthCorrectionTau),
-                    String.format("--log_mean_bias_std=%f", logMeanBiasStandardDeviation),
-                    String.format("--init_ard_rel_unexplained_variance=%f", initARDRelUnexplainedVariance),
-                    String.format("--num_gc_bins=%d", numGCBins),
-                    String.format("--gc_curve_sd=%f", gcCurveStandardDeviation),
-                    String.format("--q_c_expectation_mode=%s", gcExpectationMode.pythonArgumentString),
-                    String.format("--enable_bias_factors=%s", enableBiasFactors ? "True" : "False"),
-                    String.format("--disable_bias_factors_in_flat_class=%s", disableBiasFactorsInFlatClass ? "True" : "False"));
+                    String.format("--q_c_expectation_mode=%s", gcExpectationMode.pythonArgumentString)));
+            if (mode == Mode.COHORT) {
+                arguments.addAll(Arrays.asList(
+                        String.format("--max_bias_factors=%d", maxBiasFactors),
+                        String.format("--psi_s_scale=%f", samplePsiScale),
+                        String.format("--log_mean_bias_std=%f", logMeanBiasStandardDeviation),
+                        String.format("--init_ard_rel_unexplained_variance=%f", initARDRelUnexplainedVariance),
+                        String.format("--enable_bias_factors=%s", enableBiasFactors ? "True" : "False"),
+                        String.format("--disable_bias_factors_in_flat_class=%s", disableBiasFactorsInFlatClass ? "True" : "False"),
+                        String.format("--num_gc_bins=%d", numGCBins),
+                        String.format("--gc_curve_sd=%f", gcCurveStandardDeviation)));
+            }
+            return arguments;
         }
     }
 
-    private static final class GermlineCallingArgumentCollection implements Serializable {
+    private final class GermlineCallingArgumentCollection implements Serializable {
         private static final long serialVersionUID = 1L;
 
         @Argument(
@@ -502,13 +512,17 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         private boolean doInitializeToFlatClass = true;
 
         private List<String> generatePythonArguments() {
-            return Arrays.asList(
+            final List<String> arguments = new ArrayList<>(Arrays.asList(
                     String.format("--p_alt=%f", pAlt),
-                    String.format("--p_flat=%f", pFlat),
                     String.format("--cnv_coherence_length=%f", cnvCoherenceLength),
-                    String.format("--class_coherence_length=%f", classCoherenceLength),
-                    String.format("--max_copy_number=%d", maxCopyNumber),
-                    String.format("--initialize_to_flat_class=%s", doInitializeToFlatClass ? "True" : "False"));
+                    String.format("--max_copy_number=%d", maxCopyNumber)));
+            if (mode == Mode.COHORT) {
+                arguments.addAll(Arrays.asList(
+                        String.format("--p_flat=%f", pFlat),
+                        String.format("--class_coherence_length=%f", classCoherenceLength),
+                        String.format("--initialize_to_flat_class=%s", doInitializeToFlatClass ? "True" : "False")));
+            }
+            return arguments;
         }
     }
 }

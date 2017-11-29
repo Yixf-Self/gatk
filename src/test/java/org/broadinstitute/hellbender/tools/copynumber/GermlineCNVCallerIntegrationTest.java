@@ -14,7 +14,7 @@ import java.io.File;
  */
 public final class GermlineCNVCallerIntegrationTest extends CommandLineProgramTest {
     @Test
-    public void test() {
+    public void testCohort() {
         final String path = "/home/slee/working/gatk/";
         final ArgumentsBuilder argsBuilder = new ArgumentsBuilder()
                 .addInput(new File(path, "TCGA-02-2483-10A-01D-1494-08.counts.hdf5"))
@@ -32,6 +32,20 @@ public final class GermlineCNVCallerIntegrationTest extends CommandLineProgramTe
                 .addArgument(GermlineCNVCaller.CONTIG_PLOIDY_CALLS_DIRECTORY_LONG_NAME, path + "test-ploidy-calls")
                 .addArgument(StandardArgumentDefinitions.OUTPUT_LONG_NAME, path)
                 .addArgument(CopyNumberStandardArgument.OUTPUT_PREFIX_LONG_NAME, "test-caller")
+                .addArgument("imr", IntervalMergingRule.OVERLAPPING_ONLY.toString())
+                .addArgument(StandardArgumentDefinitions.VERBOSITY_NAME, "DEBUG");
+        runCommandLine(argsBuilder);
+    }
+
+    @Test
+    public void testCase() {
+        final String path = "/home/slee/working/gatk/";
+        final ArgumentsBuilder argsBuilder = new ArgumentsBuilder()
+                .addInput(new File(path, "TCGA-02-2483-10A-01D-1494-08.counts.hdf5"))
+                .addArgument(GermlineCNVCaller.CONTIG_PLOIDY_CALLS_DIRECTORY_LONG_NAME, path + "test-ploidy-calls")
+                .addArgument(StandardArgumentDefinitions.OUTPUT_LONG_NAME, path)
+                .addArgument(CopyNumberStandardArgument.OUTPUT_PREFIX_LONG_NAME, "test-caller-case")
+                .addArgument(CopyNumberStandardArgument.MODEL_LONG_NAME, new File(path, "test-caller-model").getAbsolutePath())
                 .addArgument("imr", IntervalMergingRule.OVERLAPPING_ONLY.toString())
                 .addArgument(StandardArgumentDefinitions.VERBOSITY_NAME, "DEBUG");
         runCommandLine(argsBuilder);

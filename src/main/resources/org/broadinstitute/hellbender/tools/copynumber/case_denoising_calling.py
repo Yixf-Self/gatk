@@ -46,11 +46,11 @@ group.add_argument("--output_calls_path",
                    default=argparse.SUPPRESS,
                    help="Output path to write CNV calls")
 
-group.add_argument("--output_adamax_path",
+group.add_argument("--output_opt_path",
                    type=str,
                    required=False,
                    default=argparse.SUPPRESS,
-                   help="(advanced) Output path to write adamax moment estimates")
+                   help="(advanced) Output path to write the latest optimizer state")
 
 group.add_argument("--input_calls_path",
                    type=str,
@@ -58,11 +58,11 @@ group.add_argument("--input_calls_path",
                    default=argparse.SUPPRESS,
                    help="Path to previously obtained calls to take as starting point")
 
-group.add_argument("--input_adamax_path",
+group.add_argument("--input_opt_path",
                    type=str,
                    required=False,
                    default=argparse.SUPPRESS,
-                   help="(advanced) Path to previously obtained adamax moment estimates take as starting point")
+                   help="(advanced) Path to exported optimizer state to take as the starting point")
 
 # add denoising config args
 # Note: we are hiding parameters that are either set by the model or are irrelevant to the case calling task
@@ -166,24 +166,6 @@ if __name__ == "__main__":
     gcnvkernel.io_metadata.update_sample_metadata_collection_from_ploidy_determination_calls(
         sample_metadata_collection, args.ploidy_calls_path)
 
-    # setup sample contig ploidy array
-    baseline_copy_number_s = None
-    for contig in contigs_set:
-        if baseline_copy_number_s is None:
-            baseline_copy_number_s = sample_metadata_collection.get_sample_contig_ploidy_array(
-                contig, sample_names)
-        else:  # the target interval list has more than one contig
-            other_baseline_copy_number_s = sample_metadata_collection.get_sample_contig_ploidy_array(
-                contig, sample_names)
-            assert all(baseline_copy_number_s == other_baseline_copy_number_s), \
-                "Contig ploidy of one of more samples varies across targets; " \
-                "This can occur if modeling intervals span more than one contig and " \
-                "the germline contig ploidy changes for one or more samples across the spanned " \
-                "contigs; cannot continue."
-
-    # read depth array
-    read_depth_s = sample_metadata_collection.get_sample_read_depth_array(sample_names)
-
     # setup the inference task
     args_dict = args.__dict__
 
@@ -196,7 +178,7 @@ if __name__ == "__main__":
     inference_params = gcnvkernel.HybridInferenceParameters.from_args_dict(args_dict)
     shared_workspace = gcnvkernel.DenoisingCallingWorkspace(
         denoising_config, calling_config, modeling_interval_list,
-        n_st, baseline_copy_number_s, read_depth_s)
+        n_st, sample_names, sample_metadata_collection)
     initial_params_supplier = gcnvkernel.DefaultDenoisingModelInitializer(
         denoising_config, calling_config, shared_workspace)
     task = gcnvkernel.CaseDenoisingCallingTask(
@@ -209,9 +191,9 @@ if __name__ == "__main__":
             shared_workspace, task.continuous_model, task.continuous_model_approx,
             args.input_calls_path)()
 
-    if hasattr(args, 'input_adamax_path'):
-        logger.info("An adamax moment path was provided to use as starting point...")
-        gcnvkernel.io_adamax.AdamaxMomentEstimateImporter(task.fancy_adamax, args.input_adamax_path)()
+    if hasattr(args, 'input_opt_path'):
+        logger.info("An exported optimizer state was provided to use as starting point...")
+        task.fancy_opt.load(args.input_opt_path)
 
     # go!
     task.engage()
@@ -226,6 +208,6 @@ if __name__ == "__main__":
     shutil.copy(os.path.join(args.input_model_path, gcnvkernel.io_consts.default_interval_list_filename),
                 os.path.join(args.output_calls_path, gcnvkernel.io_consts.default_interval_list_filename))
 
-    # save adamax moments
-    if hasattr(args, 'output_adamax_path'):
-        gcnvkernel.io_adamax.AdamaxMomentEstimateExporter(task.fancy_adamax, args.output_adamax_path)()
+    # save optimizer state
+    if hasattr(args, 'output_opt_path'):
+        task.fancy_opt.save(args.output_opt_path)
