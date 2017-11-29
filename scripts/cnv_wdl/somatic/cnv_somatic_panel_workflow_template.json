@@ -1,12 +1,9 @@
 {
-  "CNVSomaticPanelWorkflow.intervals": "$__intervals__",
-  "CNVSomaticPanelWorkflow.normal_bams_list": "$__normal_bams_list__",
-  "CNVSomaticPanelWorkflow.bin_length": "$__bin_length__",
-  "CNVSomaticPanelWorkflow.intervals": "$__intervals__",
-  "CNVSomaticPanelWorkflow.pon_entity_id": "$__pon_entity_id__",
-  "CNVSomaticPanelWorkflow.ref_fasta": "$__ref_fasta__",
-  "CNVSomaticPanelWorkflow.ref_fasta_fai": "$__ref_fasta_fai__",
-  "CNVSomaticPanelWorkflow.ref_fasta_dict": "$__ref_fasta_dict__",
-  "CNVSomaticPanelWorkflow.gatk4_jar_override": "$__gatk4_jar_override__",
-  "CNVSomaticPanelWorkflow.gatk_docker": "$__gatk_docker__"
+  "CNVSomaticPanelWorkflow.gatk_docker": "String",
+  "CNVSomaticPanelWorkflow.intervals": "File",
+  "CNVSomaticPanelWorkflow.normal_bams_list": "File",
+  "CNVSomaticPanelWorkflow.pon_entity_id": "String",
+  "CNVSomaticPanelWorkflow.ref_fasta_dict": "File",
+  "CNVSomaticPanelWorkflow.ref_fasta_fai": "File",
+  "CNVSomaticPanelWorkflow.ref_fasta": "File"
 }

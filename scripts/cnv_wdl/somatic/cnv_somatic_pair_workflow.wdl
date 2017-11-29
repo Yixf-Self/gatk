@@ -22,26 +22,26 @@
 import "cnv_common_tasks.wdl" as CNVTasks
 
 workflow CNVSomaticPairWorkflow {
-    File intervals
     File common_sites
+    File intervals
     File tumor_bam
     File tumor_bam_idx
     File normal_bam
     File normal_bam_idx
-    File ref_fasta
+    File read_count_pon
     File ref_fasta_dict
     File ref_fasta_fai
-    File read_count_pon
-    File? gatk4_jar_override
+    File ref_fasta
     String gatk_docker
+    File? gatk4_jar_override
+
+    # Use as a last resort to increase the disk given to every task in case of ill behaving data
+    Int? emergency_extra_disk
 
     Int ref_size = ceil(size(ref_fasta, "GB") + size(ref_fasta_dict, "GB") + size(ref_fasta_fai, "GB"))
     Int read_count_pon_size = ceil(size(read_count_pon, "GB"))
     Int tumor_bam_size = ceil(size(tumor_bam, "GB") + size(tumor_bam_idx, "GB"))
     Int normal_bam_size = ceil(size(normal_bam, "GB") + size(normal_bam_idx, "GB"))
-
-    # Use as a last resort to increase the disk given to every task in case of ill behaving data
-    Int? emergency_extra_disk
 
     Int gatk4_override_size = if defined(gatk4_jar_override) then ceil(size(gatk4_jar_override, "GB")) else 0
     # This is added to every task as padding, should increase if systematically you need more disk for every call
@@ -129,7 +129,7 @@ workflow CNVSomaticPairWorkflow {
             disk_space_gb = denoise_read_counts_normal_disk
     }
 
-    Int  model_segments_disk = ceil(size(DenoiseReadCountsTumor.denoised_copy_ratios, "GB")) + ceil(size(CollectAllelicCountsTumor.allelic_counts, "GB")) + ceil(size(CollectAllelicCountsNormal.allelic_counts, "GB")) + disk_pad
+    Int model_segments_disk = ceil(size(DenoiseReadCountsTumor.denoised_copy_ratios, "GB")) + ceil(size(CollectAllelicCountsTumor.allelic_counts, "GB")) + ceil(size(CollectAllelicCountsNormal.allelic_counts, "GB")) + disk_pad
     call ModelSegments as ModelSegmentsTumor {
         input:
             entity_id = CollectCountsTumor.entity_id,

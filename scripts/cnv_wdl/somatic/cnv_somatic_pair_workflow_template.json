@@ -1,14 +1,13 @@
 {
-  "CNVSomaticPairWorkflow.intervals":  "$__intervals__",
-  "CNVSomaticPairWorkflow.common_sites":  "$__common_sites__",
-  "CNVSomaticPairWorkflow.read_count_pon": "$__read_count_pon__",
-  "CNVSomaticPairWorkflow.tumor_bam": "$__tumor_bam__",
-  "CNVSomaticPairWorkflow.tumor_bam_idx": "$__tumor_bam_idx__",
-  "CNVSomaticPairWorkflow.normal_bam": "$__normal_bam__",
-  "CNVSomaticPairWorkflow.normal_bam_idx": "$__normal_bam_idx__",
-  "CNVSomaticPairWorkflow.ref_fasta": "$__ref_fasta__",
-  "CNVSomaticPairWorkflow.ref_fasta_dict": "$__ref_fasta_dict__",
-  "CNVSomaticPairWorkflow.ref_fasta_fai": "$__ref_fasta_fai__",
-  "CNVSomaticPairWorkflow.gatk4_jar_override": "$__gatk4_jar_override__",
-  "CNVSomaticPairWorkflow.gatk_docker": "$__gatk_docker__"
+  "CNVSomaticPairWorkflow.common_sites": "File",
+  "CNVSomaticPairWorkflow.gatk_docker": "String",
+  "CNVSomaticPairWorkflow.intervals": "File",
+  "CNVSomaticPairWorkflow.normal_bam": "File",
+  "CNVSomaticPairWorkflow.normal_bam_idx": "File",
+  "CNVSomaticPairWorkflow.read_count_pon": "File",
+  "CNVSomaticPairWorkflow.ref_fasta_dict": "File",
+  "CNVSomaticPairWorkflow.ref_fasta_fai": "File",
+  "CNVSomaticPairWorkflow.ref_fasta": "File",
+  "CNVSomaticPairWorkflow.tumor_bam": "File",
+  "CNVSomaticPairWorkflow.tumor_bam_idx": "File"
 }

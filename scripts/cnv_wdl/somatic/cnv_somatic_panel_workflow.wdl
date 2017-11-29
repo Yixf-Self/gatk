@@ -25,15 +25,14 @@ import "cnv_common_tasks.wdl" as CNVTasks
 
 workflow CNVSomaticPanelWorkflow {
     File intervals
-    Int? bin_length
     File normal_bams_list
     Array[Array[String]]+ normal_bams = read_tsv(normal_bams_list)
     String pon_entity_id
-    File ref_fasta
     File ref_fasta_dict
     File ref_fasta_fai
-    File? gatk4_jar_override
+    File ref_fasta
     String gatk_docker
+    File? gatk4_jar_override
     Int? mem_for_create_read_count_pon
 
     # If true, AnnotateIntervals will be run to create GC annotations and explicit GC correction
@@ -43,7 +42,6 @@ workflow CNVSomaticPanelWorkflow {
     call CNVTasks.PreprocessIntervals {
         input:
             intervals = intervals,
-            bin_length = bin_length,
             ref_fasta_dict = ref_fasta_dict,
             gatk4_jar_override = gatk4_jar_override,
             gatk_docker = gatk_docker
