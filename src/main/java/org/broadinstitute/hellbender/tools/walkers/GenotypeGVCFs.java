@@ -83,13 +83,14 @@ public final class GenotypeGVCFs extends VariantWalker {
 
     public static final String PHASED_HOM_VAR_STRING = "1|1";
     public static final String ONLY_OUTPUT_CALLS_STARTING_IN_INTERVALS_FULL_NAME = "only-output-calls-starting-in-intervals";
+    public static final String ALL_SITES_LONG_NAME = "include-non-variant-sites";
     private static final String GVCF_BLOCK = "GVCFBlock";
 
     @Argument(fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME, shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
             doc="File to which variants should be written", optional=false)
     private File outputFile;
 
-    //@Argument(fullName="includeNonVariantSites", shortName="allSites", doc="Include loci found to be non-variant after genotyping", optional=true)
+    //@Argument(fullName=ALL_SITES_LONG_NAME, shortName="allSites", doc="Include loci found to be non-variant after genotyping", optional=true)
     //TODO This option is currently not supported.
     private boolean includeNonVariants = false;
 

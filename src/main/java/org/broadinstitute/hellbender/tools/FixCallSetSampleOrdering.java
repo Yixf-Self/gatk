@@ -41,7 +41,7 @@ public final class FixCallSetSampleOrdering extends VariantWalker {
             optional = false)
     public String sampleNameMapPath;
 
-    @Argument(fullName = GenomicsDBImport.BATCHSIZE_ARG_NAME,
+    @Argument(fullName = GenomicsDBImport.BATCHSIZE_ARG_LONG_NAME,
             doc="the exact batch size that was used to import the callset using GenomicsDBImport",
             minValue = 0,
             optional = false)
@@ -66,7 +66,7 @@ public final class FixCallSetSampleOrdering extends VariantWalker {
         assertThatTheyReallyWantToProceed();
 
         if (batchSize == 0) {
-            throw new SampleNameFixingCannotProceedException("your callset is not affected by the bug if you ran with --"+ GenomicsDBImport.BATCHSIZE_ARG_NAME +" 0");
+            throw new SampleNameFixingCannotProceedException("your callset is not affected by the bug if you ran with --"+ GenomicsDBImport.BATCHSIZE_ARG_LONG_NAME +" 0");
         }
 
         final VCFHeader originalHeader = getHeaderForVariants();

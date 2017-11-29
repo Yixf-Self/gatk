@@ -60,32 +60,54 @@ public abstract class AssemblyRegionWalker extends GATKTool {
      */
     public static final int NO_INTERVAL_SHARDING = -1;
 
+    //NOTE: these argument names are referenced by HaplotypeCallerSpark
+    public static final String SHARD_SIZE_LONG_NAME = "read-shard-size";
+    public static final String SHARD_SIZE_SHORT_NAME = "readShardSize";
+    public static final String SHARD_PADDING_LONG_NAME = "read-shard-padding";
+    public static final String SHARD_PADDING_SHORT_NAME = "readShardPadding";
+    public static final String MIN_ASSEMBLY_LONG_NAME = "min-assembly-region-size";
+    public static final String MIN_ASSEMBLY_SHORT_NAME = "minAssemblyRegionSize";
+    public static final String MAX_ASSEMBLY_LONG_NAME = "max-assembly-region-size";
+    public static final String MAX_ASSEMBLY_SHORT_NAME = "maxAssemblyRegionSize";
+    public static final String ASSEMBLY_PADDING_LONG_NAME = "max-assembly-region-padding";
+    public static final String ASSEMBLY_PADDING_SHORT_NAME = "assemblyRegionPadding";
+    public static final String MAX_STARTS_LONG_NAME = "max-reads-per-alignment-start";
+    public static final String MAX_STARTS_SHORT_NAME = "maxReadsPerAlignmentStart";
+    public static final String THRESHOLD_LONG_NAME = "active-probability-threshold";
+    public static final String THRESHOLD_SHORT_NAME = "activeProbabilityThreshold";
+    public static final String PROPAGATION_LONG_NAME = "max-prob-propagation-distance";
+    public static final String PROPAGATION_SHORT_NAME = "maxProbPropagationDistance";
+    public static final String PROFILE_OUT_LONG_NAME = "activity-profile-out";
+    public static final String PROFILE_OUT_SHORT_NAME = "APO";
+    public static final String ASSEMBLY_REGION_OUT_LONG_NAME = "assembly-region-out";
+    public static final String ASSEMBLY_REGION_OUT_SHORT_NAME = "ARO";
+
     @Advanced
-    @Argument(fullName="readShardSize", shortName="readShardSize", doc = "Maximum size of each read shard, in bases. Set to " + NO_INTERVAL_SHARDING + " for one shard per interval (or one shard per contig, if intervals are not explicitly specified). For good performance, this should typically be much larger than the maximum assembly region size.", optional = true)
+    @Argument(fullName=SHARD_SIZE_LONG_NAME, shortName=SHARD_SIZE_SHORT_NAME, doc = "Maximum size of each read shard, in bases. Set to " + NO_INTERVAL_SHARDING + " for one shard per interval (or one shard per contig, if intervals are not explicitly specified). For good performance, this should typically be much larger than the maximum assembly region size.", optional = true)
     protected int readShardSize = defaultReadShardSize();
 
     @Advanced
-    @Argument(fullName="readShardPadding", shortName="readShardPadding", doc = "Each read shard has this many bases of extra context on each side. Read shards must have as much or more padding than assembly regions.", optional = true)
+    @Argument(fullName=SHARD_PADDING_LONG_NAME, shortName=SHARD_PADDING_SHORT_NAME, doc = "Each read shard has this many bases of extra context on each side. Read shards must have as much or more padding than assembly regions.", optional = true)
     protected int readShardPadding = defaultReadShardPadding();
 
-    @Argument(fullName = "minAssemblyRegionSize", shortName = "minAssemblyRegionSize", doc = "Minimum size of an assembly region", optional = true)
+    @Argument(fullName = MIN_ASSEMBLY_LONG_NAME, shortName = MIN_ASSEMBLY_SHORT_NAME, doc = "Minimum size of an assembly region", optional = true)
     protected int minAssemblyRegionSize = defaultMinAssemblyRegionSize();
 
-    @Argument(fullName = "maxAssemblyRegionSize", shortName = "maxAssemblyRegionSize", doc = "Maximum size of an assembly region", optional = true)
+    @Argument(fullName = MAX_ASSEMBLY_LONG_NAME, shortName = MAX_ASSEMBLY_SHORT_NAME, doc = "Maximum size of an assembly region", optional = true)
     protected int maxAssemblyRegionSize = defaultMaxAssemblyRegionSize();
 
-    @Argument(fullName = "assemblyRegionPadding", shortName = "assemblyRegionPadding", doc = "Number of additional bases of context to include around each assembly region", optional = true)
+    @Argument(fullName = ASSEMBLY_PADDING_LONG_NAME, shortName = ASSEMBLY_PADDING_SHORT_NAME, doc = "Number of additional bases of context to include around each assembly region", optional = true)
     protected int assemblyRegionPadding = defaultAssemblyRegionPadding();
 
-    @Argument(fullName = "maxReadsPerAlignmentStart", shortName = "maxReadsPerAlignmentStart", doc = "Maximum number of reads to retain per alignment start position. Reads above this threshold will be downsampled. Set to 0 to disable.", optional = true)
+    @Argument(fullName = MAX_STARTS_LONG_NAME, shortName = MAX_STARTS_SHORT_NAME, doc = "Maximum number of reads to retain per alignment start position. Reads above this threshold will be downsampled. Set to 0 to disable.", optional = true)
     protected int maxReadsPerAlignmentStart = defaultMaxReadsPerAlignmentStart();
 
     @Advanced
-    @Argument(fullName = "activeProbabilityThreshold", shortName = "activeProbabilityThreshold", doc="Minimum probability for a locus to be considered active.", optional = true)
+    @Argument(fullName = THRESHOLD_LONG_NAME, shortName = THRESHOLD_SHORT_NAME, doc="Minimum probability for a locus to be considered active.", optional = true)
     protected double activeProbThreshold = defaultActiveProbThreshold();
 
     @Advanced
-    @Argument(fullName = "maxProbPropagationDistance", shortName = "maxProbPropagationDistance", doc="Upper limit on how many bases away probability mass can be moved around when calculating the boundaries between active and inactive assembly regions", optional = true)
+    @Argument(fullName = PROPAGATION_LONG_NAME, shortName = PROPAGATION_SHORT_NAME, doc="Upper limit on how many bases away probability mass can be moved around when calculating the boundaries between active and inactive assembly regions", optional = true)
     protected int maxProbPropagationDistance = defaultMaxProbPropagationDistance();
 
     /**
@@ -96,7 +118,7 @@ public abstract class AssemblyRegionWalker extends GATKTool {
      *
      * Intended to make debugging the activity profile calculations easier
      */
-    @Argument(fullName="activityProfileOut", shortName="APO", doc="Output the raw activity profile results in IGV format", optional = true)
+    @Argument(fullName=PROFILE_OUT_LONG_NAME, shortName=PROFILE_OUT_SHORT_NAME, doc="Output the raw activity profile results in IGV format", optional = true)
     protected String activityProfileOut = null;
 
     private PrintStream activityProfileOutStream;
@@ -109,7 +131,7 @@ public abstract class AssemblyRegionWalker extends GATKTool {
      *
      * Intended to make debugging the active region calculations easier
      */
-    @Argument(fullName="assemblyRegionOut", shortName="ARO", doc="Output the assembly region to this IGV formatted file", optional = true)
+    @Argument(fullName=ASSEMBLY_REGION_OUT_LONG_NAME, shortName=ASSEMBLY_REGION_OUT_SHORT_NAME, doc="Output the assembly region to this IGV formatted file", optional = true)
     protected String assemblyRegionOut = null;
 
     private PrintStream assemblyRegionOutStream;

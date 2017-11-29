@@ -139,6 +139,7 @@ import java.util.List;
 @BetaFeature
 public final class HaplotypeCaller extends AssemblyRegionWalker {
 
+    //NOTE: many of these settings are referenced by HaplotypeCallerSpark
     public static final int DEFAULT_READSHARD_SIZE = NO_INTERVAL_SHARDING;
     public static final int DEFAULT_READSHARD_PADDING = 100;
     public static final int DEFAULT_MIN_ASSEMBLY_REGION_SIZE = 50;
