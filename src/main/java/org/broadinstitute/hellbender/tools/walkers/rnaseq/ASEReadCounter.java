@@ -119,7 +119,7 @@ public class ASEReadCounter extends LocusWalker {
     /**
      * Available options are csv, table, rtable. By default, the format is rtable (an r-readable table).
      */
-    @Argument(fullName = "-output-format", doc = "Format of the output file", optional = true)
+    @Argument(fullName = "output-format", doc = "Format of the output file", optional = true)
     public OUTPUT_FORMAT outputFormat = OUTPUT_FORMAT.RTABLE;
 
     public String separator = "\t";
