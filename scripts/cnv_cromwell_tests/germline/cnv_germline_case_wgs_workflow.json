@@ -1,0 +1,14 @@
+{
+  "CNVGermlineCaseWorkflow.common_sites": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/common_snps_sample-chr20.interval_list",
+  "CNVGermlineCaseWorkflow.gatk_docker": "__GATK_DOCKER__",
+  "CNVGermlineCaseWorkflow.intervals": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/chr20.interval_list",
+  "CNVGermlineCaseWorkflow.normal_bam": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/HCC1143_BL-n1-chr20-downsampled.deduplicated.bam",
+  "CNVGermlineCaseWorkflow.normal_bam_idx": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/HCC1143_BL-n1-chr20-downsampled.deduplicated.bam.bai",
+  "CNVGermlineCaseWorkflow.PreprocessIntervals.bin_length": "10000",
+  "CNVGermlineCaseWorkflow.read_count_pon": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/wgs-no-gc.pon.hdf5",
+  "CNVGermlineCaseWorkflow.ref_fasta_dict": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/human_g1k_v37.chr-20.truncated.dict",
+  "CNVGermlineCaseWorkflow.ref_fasta_fai": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/human_g1k_v37.chr-20.truncated.fasta.fai",
+  "CNVGermlineCaseWorkflow.ref_fasta": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/human_g1k_v37.chr-20.truncated.fasta",
+  "CNVGermlineCaseWorkflow.tumor_bam": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/HCC1143-t1-chr20-downsampled.deduplicated.bam",
+  "CNVGermlineCaseWorkflow.tumor_bam_idx": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/HCC1143-t1-chr20-downsampled.deduplicated.bam.bai"
+}

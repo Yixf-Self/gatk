@@ -1,0 +1,10 @@
+{
+  "CNVGermlineCaseWorkflow.gatk_docker": "String",
+  "CNVGermlineCaseWorkflow.intervals": "File",
+  "CNVGermlineCaseWorkflow.normal_bam": "File",
+  "CNVGermlineCaseWorkflow.normal_bam_idx": "File",
+  "CNVGermlineCaseWorkflow.read_count_pon": "File",
+  "CNVGermlineCaseWorkflow.ref_fasta_dict": "File",
+  "CNVGermlineCaseWorkflow.ref_fasta_fai": "File",
+  "CNVGermlineCaseWorkflow.ref_fasta": "File"
+}
