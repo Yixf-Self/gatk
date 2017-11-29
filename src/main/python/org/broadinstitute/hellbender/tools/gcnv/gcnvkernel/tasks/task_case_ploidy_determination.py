@@ -30,7 +30,7 @@ class CasePloidyInferenceTask(HybridInferenceTask):
         opt = FancyAdamax(learning_rate=hybrid_inference_params.learning_rate,
                           beta1=hybrid_inference_params.adamax_beta1,
                           beta2=hybrid_inference_params.adamax_beta2,
-                          sample_specific=True)
+                          sample_specific_only=True)
 
         super().__init__(hybrid_inference_params, ploidy_model, ploidy_emission_sampler, ploidy_caller,
                          elbo_normalization_factor=elbo_normalization_factor,

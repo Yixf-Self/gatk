@@ -172,8 +172,7 @@ class PloidyModelImporter:
 
     def __call__(self):
         # check if the model is created with the same gcnvkernel version
-        io_commons.check_gcnvkernel_version(
-            os.path.join(self.input_path, io_consts.default_gcnvkernel_version_json_filename))
+        io_commons.check_gcnvkernel_version_from_path(self.input_path)
 
         # export model params
         io_commons.import_meanfield_global_params(self.input_path, self.ploidy_model_approx, self.ploidy_model)

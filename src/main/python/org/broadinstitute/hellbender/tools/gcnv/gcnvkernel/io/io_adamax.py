@@ -4,12 +4,13 @@ import logging
 from ..inference.fancy_optimizers import FancyAdamax
 from . import io_commons
 from . import io_consts
-from .. import config
+from .. import config, types
 
 _logger = logging.getLogger(__name__)
 
 
-class AdamaxMomentEstimateExporter:
+class AdamaxStateExporter:
+    """Exports the state of adamax optimizer to disk"""
     def __init__(self,
                  fancy_adamax: FancyAdamax,
                  output_path: str):
@@ -33,11 +34,12 @@ class AdamaxMomentEstimateExporter:
         rho_u = self.fancy_adamax.get_rho_u().get_value(borrow=True)
         np.save(os.path.join(self.output_path, "rho_" + io_consts.default_adamax_u_filename), rho_u)
 
-        res = self.fancy_adamax.get_res_tensor().get_value(borrow=True)
-        np.save(os.path.join(self.output_path, io_consts.default_adamax_res_filename), res)
+        if not self.fancy_adamax.disable_bias_correction:
+            res = self.fancy_adamax.get_res_tensor().get_value(borrow=True)
+            np.save(os.path.join(self.output_path, io_consts.default_adamax_res_filename), res)
 
 
-class AdamaxMomentEstimateImporter:
+class AdamaxStateImporter:
     def __init__(self,
                  fancy_adamax: FancyAdamax,
                  input_path: str):
@@ -47,14 +49,14 @@ class AdamaxMomentEstimateImporter:
     @staticmethod
     def _assert_shape(imported_ndarray, expected_shared_tensor):
         assert imported_ndarray.shape == expected_shared_tensor.get_value(borrow=True).shape, \
-            "The imported adamax moments have a different shape ({0}) than expected ({1}). This can " \
-            "occur if the imported moments correspond to a different model".format(
-                imported_ndarray.shape, expected_shared_tensor.get_value(borrow=True).shape)
+            "The exported adamax state has a different shape (shape={0}) than the currently instantiated adamax " \
+            "(shape={1}). This can occur if the exported adamax state corresponds to a run with different number of " \
+            "samples, intervals, or model configuration (i.e. w/ or w/o explicit GC bias modeling or bias " \
+            "factor discovery)".format(imported_ndarray.shape, expected_shared_tensor.get_value(borrow=True).shape)
 
     def __call__(self):
         _logger.info("Importing adamax moment estimates...")
-        io_commons.check_gcnvkernel_version(
-            os.path.join(self.input_path, io_consts.default_gcnvkernel_version_json_filename))
+        io_commons.check_gcnvkernel_version_from_path(self.input_path)
 
         imported_mu_m = np.load(
             os.path.join(self.input_path, "mu_" + io_consts.default_adamax_m_filename))
@@ -76,7 +78,13 @@ class AdamaxMomentEstimateImporter:
         self._assert_shape(imported_rho_u, self.fancy_adamax.get_rho_u())
         self.fancy_adamax.get_rho_u().set_value(imported_rho_u, borrow=config.borrow_numpy)
 
-        imported_res = np.load(
-            os.path.join(self.input_path, io_consts.default_adamax_res_filename))
-        self._assert_shape(imported_res, self.fancy_adamax.get_res_tensor())
-        self.fancy_adamax.get_res_tensor().set_value(imported_res, borrow=config.borrow_numpy)
+        if not self.fancy_adamax.disable_bias_correction:
+            res_filename = os.path.join(self.input_path, io_consts.default_adamax_res_filename)
+            if not os.path.exists(res_filename):
+                _logger.warning("Could not find adamax bias correction residue tensor in \"{0}\"; setting the bias "
+                                "correction residue to zero and proceeding".format(self.input_path))
+                self.fancy_adamax.get_res_tensor().set_value(
+                    np.asarray([0], dtype=types.floatX), borrow=config.borrow_numpy)
+            else:
+                imported_res = np.load(res_filename)
+                self.fancy_adamax.get_res_tensor().set_value(imported_res, borrow=config.borrow_numpy)

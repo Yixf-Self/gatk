@@ -14,12 +14,13 @@ from .models.model_denoising_calling import DefaultInitialModelParametersSupplie
 from .models.model_ploidy import PloidyModelConfig, PloidyWorkspace
 
 # metadata
-from .structs.metadata import IntervalListMetadata, SampleMetadataCollection,\
+from .structs.metadata import IntervalListMetadata, SampleMetadataCollection, \
     SampleCoverageMetadata, SamplePloidyMetadata
 
 # pre-processing and io
 from .preprocess.interval_list_mask import IntervalListMask
-from .io import io_consts, io_ploidy, io_denoising_calling, io_intervals_and_counts, io_metadata, io_adamax
+from .io import io_commons, io_consts, io_ploidy, io_denoising_calling, \
+    io_intervals_and_counts, io_metadata, io_adamax
 from .utils import cli_commons
 
 assert pymc3_version in ["3.1", "3.2"], "Only PyMC3 3.1 and 3.2 are supported"

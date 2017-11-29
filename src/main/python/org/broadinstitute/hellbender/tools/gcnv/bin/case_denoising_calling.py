@@ -70,7 +70,7 @@ gcnvkernel.DenoisingModelConfig.expose_args(
     parser,
     hide={
         "--max_bias_factors",
-        "--psi_j_scale",
+        "--psi_t_scale",
         "--log_mean_bias_std",
         "--init_ard_rel_unexplained_variance",
         "--enable_bias_factors",
@@ -101,7 +101,6 @@ gcnvkernel.HybridInferenceParameters.expose_args(
 
 def update_args_dict_from_exported_model(input_model_path: str,
                                          _args_dict: Dict[str, Any]):
-
     logging.info("Loading denoising model configuration from the provided model...")
     with open(os.path.join(input_model_path, "denoising_config.json"), 'r') as fp:
         imported_denoising_config_dict = json.load(fp)
@@ -147,6 +146,9 @@ if __name__ == "__main__":
     # parse arguments
     args = parser.parse_args()
     gcnvkernel.cli_commons.set_logging_config_from_args(args)
+
+    # check gcnvkernel version in the input model path
+    gcnvkernel.io_commons.check_gcnvkernel_version_from_path(args.input_model_path)
 
     # load modeling interval list from the model
     logging.info("Loading modeling interval list from the provided model...")

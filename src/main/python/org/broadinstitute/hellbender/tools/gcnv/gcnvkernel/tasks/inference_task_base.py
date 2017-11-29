@@ -12,7 +12,7 @@ from .. models.fancy_model import GeneralizedContinuousModel
 from typing import List, Callable, Optional, Set, Tuple, Any, Dict
 from abc import abstractmethod
 from ..inference.covergence_tracker import NoisyELBOConvergenceTracker
-from ..inference.param_tracker import ParamTrackerConfig, ParamTracker
+from ..inference.param_tracker import VariationalParameterTrackerConfig, VariationalParameterTracker
 from ..inference import fancy_optimizers
 from ..inference.deterministic_annealing import ADVIDeterministicAnnealing
 from .. import types
@@ -211,11 +211,11 @@ class HybridInferenceTask(InferenceTask):
                     learning_rate=hybrid_inference_params.learning_rate,
                     beta1=hybrid_inference_params.adamax_beta1,
                     beta2=hybrid_inference_params.adamax_beta2,
-                    sample_specific=False)
+                    sample_specific_only=False)
 
             self.continuous_model_step_func = self.continuous_model_advi.objective.step_function(
                 score=True,
-                obj_optimizer=self.fancy_opt.get_opt(self.continuous_model, self.continuous_model_approx),
+                obj_optimizer=self.fancy_opt.get_optimizer(self.continuous_model, self.continuous_model_approx),
                 total_grad_norm_constraint=self.hybrid_inference_params.total_grad_norm_constraint,
                 obj_n_mc=self.hybrid_inference_params.obj_n_mc,
                 more_updates=temperature_update)
@@ -302,9 +302,9 @@ class HybridInferenceTask(InferenceTask):
     def _create_param_tracker(self):
         assert all([param_name in self.continuous_model.vars or
                     param_name in self.continuous_model.deterministics
-                    for param_name in self.hybrid_inference_params.param_tracker_config.param_names]),\
+                    for param_name in self.hybrid_inference_params.param_tracker_config.var_names]),\
             "Some of the parameters chosen to be tracker are not present in the model"
-        return ParamTracker(self.hybrid_inference_params.param_tracker_config)
+        return VariationalParameterTracker(self.hybrid_inference_params.param_tracker_config)
 
     def _update_continuous_posteriors(self) -> bool:
         self._log_start(self.advi_task_name, self.i_epoch)
@@ -461,7 +461,7 @@ class HybridInferenceParameters:
                  num_thermal_epochs: int = 20,
                  track_model_params: bool = False,
                  track_model_params_every: int = 10,
-                 param_tracker_config: Optional['ParamTrackerConfig'] = None,
+                 param_tracker_config: Optional['VariationalParameterTrackerConfig'] = None,
                  convergence_snr_averaging_window: int = 500,
                  convergence_snr_trigger_threshold: float = 0.1,
                  convergence_snr_countdown_window: int = 10,

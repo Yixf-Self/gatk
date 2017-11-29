@@ -128,7 +128,7 @@ class CohortDenoisingAndCallingTask(HybridInferenceTask):
         opt = FancyAdamax(learning_rate=hybrid_inference_params.learning_rate,
                           beta1=hybrid_inference_params.adamax_beta1,
                           beta2=hybrid_inference_params.adamax_beta2,
-                          sample_specific=False)
+                          sample_specific_only=False)
 
         super().__init__(hybrid_inference_params, denoising_model, copy_number_emission_sampler, copy_number_caller,
                          elbo_normalization_factor=elbo_normalization_factor,

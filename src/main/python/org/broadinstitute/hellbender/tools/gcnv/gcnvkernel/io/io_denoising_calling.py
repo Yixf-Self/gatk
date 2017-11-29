@@ -86,8 +86,7 @@ class DenoisingModelImporter:
 
     def __call__(self):
         # check if the model is created with the same gcnvkernel version
-        io_commons.check_gcnvkernel_version(
-            os.path.join(self.input_path, io_consts.default_gcnvkernel_version_json_filename))
+        io_commons.check_gcnvkernel_version_from_path(self.input_path)
 
         # import global workspace variables
         self.denoising_calling_workspace.log_q_tau_tk.set_value(

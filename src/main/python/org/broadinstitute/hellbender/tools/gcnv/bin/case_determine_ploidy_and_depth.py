@@ -70,6 +70,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     gcnvkernel.cli_commons.set_logging_config_from_args(args)
 
+    # check gcnvkernel version in the input model path
+    gcnvkernel.io_commons.check_gcnvkernel_version_from_path(args.input_model_path)
+
     # read contig ploidy prior map from the model
     contig_ploidy_prior_file = os.path.join(args.input_model_path,
                                             gcnvkernel.io_consts.default_contig_ploidy_prior_tsv_filename)

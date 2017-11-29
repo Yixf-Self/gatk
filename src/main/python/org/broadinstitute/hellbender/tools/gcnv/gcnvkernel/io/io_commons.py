@@ -16,11 +16,23 @@ _logger = logging.getLogger(__name__)
 
 
 def extract_sample_name_from_header(input_file: str,
-                                    max_scan_lines: int = 100) -> str:
+                                    max_scan_lines: int = 100,
+                                    sample_name_header_regexp: str = io_consts.sample_name_header_regexp) -> str:
+    """Extracts sample name from header.
+
+    Args:
+        input_file: any readable text file
+        max_scan_lines: maximum number of lines to scan from the top of the file
+        sample_name_header_regexp: the regular expression for identifying the header line that contains
+            the sample name
+
+    Returns:
+        Sample name
+    """
     with open(input_file, 'r') as f:
         for _ in range(max_scan_lines):
             line = f.readline()
-            match = re.search(io_consts.sample_name_header_regexp, line, re.M)
+            match = re.search(sample_name_header_regexp, line, re.M)
             if match is None:
                 continue
             groups = match.groups()
@@ -29,6 +41,14 @@ def extract_sample_name_from_header(input_file: str,
 
 
 def get_sample_name_from_txt_file(input_path: str) -> str:
+    """Extract sample name from a text file.
+
+    Args:
+        input_path: a path containing the sample name .txt file
+
+    Returns:
+        Sample name
+    """
     sample_name_file = os.path.join(input_path, io_consts.default_sample_name_txt_filename)
     assert os.path.exists(sample_name_file), \
         "Sample name .txt file could not be found in \"{0}\"".format(input_path)
@@ -37,15 +57,30 @@ def get_sample_name_from_txt_file(input_path: str) -> str:
             return line.strip()
 
 
-def assert_output_path_writable(output_path: str, try_creating_output_path: bool = True):
+def assert_output_path_writable(output_path: str,
+                                try_creating_output_path: bool = True):
+    """Assert an output path is either writable or can be created upon request.
+
+    Args:
+        output_path: the tentative output path
+        try_creating_output_path: whether or not try creating the path recursively
+            if it does not already exist
+
+    Raises:
+        IOError: if the output path is not writable, is not a directory, or does
+            not exist and can not be created
+
+    Returns:
+        None
+    """
     if os.path.exists(output_path):
         if not os.path.isdir(output_path):
-            raise AssertionError("the provided output path \"{0}\" is not a directory")
+            raise IOError("The provided output path \"{0}\" is not a directory")
     elif try_creating_output_path:
         try:
             os.makedirs(output_path)
         except IOError:
-            raise AssertionError("the provided output path \"{0}\" does not exist and can not be created")
+            raise IOError("The provided output path \"{0}\" does not exist and can not be created")
     tmp_prefix = "write_tester"
     count = 0
     filename = os.path.join(output_path, tmp_prefix)
@@ -57,11 +92,29 @@ def assert_output_path_writable(output_path: str, try_creating_output_path: bool
         filehandle.close()
         os.remove(filename)
     except IOError:
-        raise AssertionError("the output path \"{0}\" is not writeable".format(output_path))
+        raise IOError("The output path \"{0}\" is not writeable".format(output_path))
 
 
-def write_ndarray_to_tsv(output_file: str, array: np.ndarray, comment='#', delimiter='\t',
+def write_ndarray_to_tsv(output_file: str,
+                         array: np.ndarray,
+                         comment='#',
+                         delimiter='\t',
                          extra_comment_lines: Optional[List[str]] = None) -> None:
+    """Write an vector or matrix ndarray to .tsv file.
+
+    Note:
+        Shape and dtype information are stored in the header.
+
+    Args:
+        output_file: output .tsv file
+        array: array to write to .tsv
+        comment: comment character
+        delimiter: delimiter character
+        extra_comment_lines: (optional) list of extra comment lines to add to the header
+
+    Returns:
+        None
+    """
     array = np.asarray(array)
     assert array.ndim <= 2
     shape = array.shape
@@ -83,7 +136,19 @@ def write_ndarray_to_tsv(output_file: str, array: np.ndarray, comment='#', delim
             f.write(row_repr + '\n')
 
 
-def read_ndarray_from_tsv(input_file: str, comment='#', delimiter='\t') -> np.ndarray:
+def read_ndarray_from_tsv(input_file: str,
+                          comment='#',
+                          delimiter='\t') -> np.ndarray:
+    """Reads a vector or matrix ndarray from .tsv file.
+
+    Args:
+        input_file: input .tsv file
+        comment: comment character
+        delimiter: delimiter character
+
+    Returns:
+        ndarray
+    """
     dtype = None
     shape = None
     rows: List[np.ndarray] = []
@@ -108,15 +173,23 @@ def read_ndarray_from_tsv(input_file: str, comment='#', delimiter='\t') -> np.nd
                     shape = _get_value('shape', stripped_line)
             else:
                 assert dtype is not None and shape is not None,\
-                    "shape and dtype information could not be found in the comments; " \
-                    "cannot continue loading {0}".format(input())
+                    "Shape and dtype information could not be found in the header of " \
+                    "\"{0}\"".format(input())
                 row = np.asarray(stripped_line.split(delimiter), dtype=dtype)
                 rows.append(row)
 
     return np.vstack(rows).reshape(make_tuple(shape))
 
 
-def get_var_map_list_from_meanfield_approx(approx: pm.MeanField):
+def get_var_map_list_from_meanfield_approx(approx: pm.MeanField) -> List[pm.blocking.VarMap]:
+    """Extracts the variable-to-linear-array of a PyMC3 mean-field approximation.
+
+    Args:
+        approx: an instance of PyMC3 mean-field approximation
+
+    Returns:
+        A list of `pymc3.blocking.VarMap`
+    """
     if pm.__version__ == "3.1":
         return approx.gbij.ordering.vmap
     elif pm.__version__ == "3.2":
@@ -127,6 +200,17 @@ def get_var_map_list_from_meanfield_approx(approx: pm.MeanField):
 
 def extract_meanfield_posterior_parameters(approx: pm.MeanField)\
         -> Tuple[Set[str], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """Extracts mean-field posterior parameters in the right shape and dtype from an instance
+    of PyMC3 mean-field approximation.
+
+    Args:
+        approx: an instance of PyMC3 mean-field approximation
+
+    Returns:
+        A tuple (set of variable names,
+        map from variable names to their respective Gaussian means,
+        map from variable names to their respective Gaussian standard deviations)
+    """
     mu_flat_view = approx.mean.get_value()
     std_flat_view = approx.std.eval()
     mu_map = dict()
@@ -139,19 +223,45 @@ def extract_meanfield_posterior_parameters(approx: pm.MeanField)\
     return var_set, mu_map, std_map
 
 
-def export_dict_to_json_file(output_file, raw_dict, blacklisted_keys):
-    filtered_dict = {k: v for k, v in raw_dict.items() if k not in blacklisted_keys}
+def export_dict_to_json_file(output_file: str,
+                             dict_to_export: Dict,
+                             ignored_keys: Set):
+    """Exports a dictionary to JSON file.
+
+    Args:
+        output_file: output .json file
+        dict_to_export: dictionary to export
+        ignored_keys: a set of keys to ignore
+    """
+    filtered_dict = {k: v for k, v in dict_to_export.items() if k not in ignored_keys}
     with open(output_file, 'w') as fp:
         json.dump(filtered_dict, fp, indent=1)
 
 
-def check_gcnvkernel_version(gcnvkernel_version_json_file: str):
+def check_gcnvkernel_version_from_json_file(gcnvkernel_version_json_file: str):
+    """Reads gcnvkernel version from a JSON file and issues a warning if it is created with a different
+    version of the module.
+
+    Args:
+        gcnvkernel_version_json_file: input .json file containing gcnvkernel version
+    """
     with open(gcnvkernel_version_json_file, 'r') as fp:
         imported_gcnvkernel_version = json.load(fp)['version']
         if imported_gcnvkernel_version != gcnvkernel_version:
-            _logger.warning("The exported model is created with a different gcnvkernel version (exported: {0}, "
-                            "current: {1}); backwards compatibility is not guaranteed; proceed at your own "
-                            "risk!".format(imported_gcnvkernel_version, gcnvkernel_version))
+            _logger.warning("The exported model is created with a different version of gcnvkernel (exported: {0}, "
+                            "current: {1}). Backwards compatibility is not guaranteed. Proceed at your own "
+                            "risk".format(imported_gcnvkernel_version, gcnvkernel_version))
+
+
+def check_gcnvkernel_version_from_path(input_path: str):
+    """Reads gcnvkernel version from a path that contains `io_consts.default_gcnvkernel_version_json_filename`,
+    reads the gcnvkernel version and issues a warning if it is created with a different version of the module.
+
+    Args:
+        input_path:
+    """
+    check_gcnvkernel_version_from_json_file(
+        os.path.join(input_path, io_consts.default_gcnvkernel_version_json_filename))
 
 
 def _get_mu_tsv_filename(path: str, var_name: str):
@@ -162,7 +272,7 @@ def _get_std_tsv_filename(path: str, var_name: str):
     return os.path.join(path, "std_" + var_name + ".tsv")
 
 
-def get_ndarray_singleton_slice_along_axis(array: np.ndarray, axis: int, index: int):
+def _get_singleton_slice_along_axis(array: np.ndarray, axis: int, index: int):
     slc = [slice(None)] * array.ndim
     slc[axis] = index
     return slc
@@ -175,14 +285,27 @@ def export_meanfield_sample_specific_params(sample_index: int,
                                             approx_std_map: Dict[str, np.ndarray],
                                             model: GeneralizedContinuousModel,
                                             extra_comment_lines: Optional[List[str]] = None):
+    """Exports sample-specific parameters contained in an instance of PyMC3 mean-field approximation
+    to disk.
+
+    Args:
+        sample_index: sample integer index
+        sample_posterior_path: output path (must be writable)
+        approx_var_name_set: set of all variable names in the model
+        approx_mu_map: a map from variable names to their respective Gaussian means
+        approx_std_map: a map from variable names to their respective Gaussian standard deviations
+        model: the generalized model corresponding to the provided mean-field approximation
+        extra_comment_lines: (optional) additional comment lines to write to the header of each output file
+    """
     sample_specific_var_registry = model.sample_specific_var_registry
     for var_name, var_sample_axis in sample_specific_var_registry.items():
         assert var_name in approx_var_name_set, "A model variable named \"{0}\" could not be found in the " \
-                                                "meanfield posterior; cannot continue with exporting".format(var_name)
+                                                "meanfield posterior while trying to export sample-specific " \
+                                                "variables to disk".format(var_name)
         mu_all = approx_mu_map[var_name]
         std_all = approx_std_map[var_name]
-        mu_slice = mu_all[get_ndarray_singleton_slice_along_axis(mu_all, var_sample_axis, sample_index)]
-        std_slice = std_all[get_ndarray_singleton_slice_along_axis(mu_all, var_sample_axis, sample_index)]
+        mu_slice = mu_all[_get_singleton_slice_along_axis(mu_all, var_sample_axis, sample_index)]
+        std_slice = std_all[_get_singleton_slice_along_axis(mu_all, var_sample_axis, sample_index)]
 
         mu_out_file_name = _get_mu_tsv_filename(sample_posterior_path, var_name)
         write_ndarray_to_tsv(mu_out_file_name, mu_slice, extra_comment_lines=extra_comment_lines)
@@ -194,13 +317,21 @@ def export_meanfield_sample_specific_params(sample_index: int,
 def export_meanfield_global_params(output_path: str,
                                    approx: pm.MeanField,
                                    model: GeneralizedContinuousModel):
+    """Exports global parameters contained in an instance of PyMC3 mean-field approximation to disk.
+
+    Args:
+        output_path: output path (must be writable)
+        approx: an instance of PyMC3 mean-field approximation
+        model: the generalized model corresponding to the provided mean-field approximation
+    """
     # parse meanfield posterior parameters
     approx_var_set, approx_mu_map, approx_std_map = extract_meanfield_posterior_parameters(approx)
 
     for var_name in model.global_var_registry:
         assert var_name in approx_var_set, "A model variable named \"{0}\" could not be found in the " \
-                                           "meanfield posterior; cannot continue with exporting".format(var_name)
-        _logger.info("exporting {0}...".format(var_name))
+                                           "meanfield posterior while trying to export global variables " \
+                                           "to disk".format(var_name)
+        _logger.info("Exporting {0}...".format(var_name))
         var_mu = approx_mu_map[var_name]
         var_mu_out_path = _get_mu_tsv_filename(output_path, var_name)
         write_ndarray_to_tsv(var_mu_out_path, var_mu)
@@ -212,7 +343,16 @@ def export_meanfield_global_params(output_path: str,
 
 def import_meanfield_global_params(input_model_path: str,
                                    approx: pm.MeanField,
-                                   model: GeneralizedContinuousModel):
+                                   model: GeneralizedContinuousModel) -> None:
+    """Imports global parameters of a given model from an exported mean-field posteriors and injects them
+    into a provided mean-field instance.
+
+    Args:
+        input_model_path: input model path
+        approx: an instance of PyMC3 mean-field approximation to be updated
+        model: the generalized model corresponding to the provided mean-field approximation and the exported
+            instance
+    """
     vmap_list = get_var_map_list_from_meanfield_approx(approx)
 
     def _update_param_inplace(param, slc, dtype, new_value):
@@ -226,8 +366,8 @@ def import_meanfield_global_params(input_model_path: str,
         var_mu_input_file = _get_mu_tsv_filename(input_model_path, var_name)
         var_std_input_file = _get_std_tsv_filename(input_model_path, var_name)
         assert os.path.exists(var_mu_input_file) and os.path.exists(var_std_input_file), \
-            "Model parameter values for \"{0}\" could not be found in the exported model path; " \
-            "cannot continue".format(var_name)
+            "Model parameter values for \"{0}\" could not be found in the exported model path while trying " \
+            "to import global mean-field parameters".format(var_name)
         _logger.info("Importing model parameter values for \"{0}\"...".format(var_name))
         var_mu = read_ndarray_from_tsv(var_mu_input_file)
         var_std = read_ndarray_from_tsv(var_std_input_file)
@@ -239,11 +379,11 @@ def import_meanfield_global_params(input_model_path: str,
         for vmap in vmap_list:
             if vmap.var == var_name:
                 assert var_mu.shape == vmap.shp,\
-                    "Loaded mean for \"{0}\" has a different shape ({1}) than the expected shape " \
-                    "({2}); cannot continue".format(var_name, var_mu.shape, vmap.shp)
+                    "Loaded mean for \"{0}\" has an unexpected shape; imported: {1}, " \
+                    "expected: {2}".format(var_name, var_mu.shape, vmap.shp)
                 assert var_rho.shape == vmap.shp, \
-                    "Loaded std for \"{0}\" has a different shape ({1}) than the expected shape " \
-                    "({2}); cannot continue".format(var_name, var_std.shape, vmap.shp)
+                    "Loaded standard deviation for \"{0}\" has an unexpected shape; imported: {1}, " \
+                    "expected: {2}".format(var_name, var_mu.shape, vmap.shp)
                 model_mu.set_value(_update_param_inplace(
                     model_mu.get_value(borrow=True), vmap.slc, vmap.dtyp, var_mu), borrow=True)
                 model_rho.set_value(_update_param_inplace(
@@ -263,7 +403,7 @@ def import_meanfield_sample_specific_params(input_sample_calls_path: str,
                               _var_sample_axis: int,
                               _sample_index: int) -> np.ndarray:
         sample_specific_var = _param[_var_slice].reshape(_var_shape)
-        sample_specific_var[get_ndarray_singleton_slice_along_axis(
+        sample_specific_var[_get_singleton_slice_along_axis(
             sample_specific_var, _var_sample_axis, _sample_index)] = _sample_specific_imported_value[:]
         return _param
 

@@ -129,7 +129,7 @@ class DenoisingModelConfig:
                               help="Number of knobs on the GC curve")
 
         process_and_maybe_add("gc_curve_sd",
-                              type=int,
+                              type=float,
                               help="Prior standard deviation of the GC curve from flat")
 
         process_and_maybe_add("q_c_expectation_mode",
