@@ -1,0 +1,26 @@
+package org.broadinstitute.hellbender.transformers;
+
+import org.broadinstitute.hellbender.utils.read.GATKRead;
+
+/**
+ * A read transformer to modify the mapping quality of reads
+ *
+ *
+ */
+public class MappingQualityReadTransformer implements ReadTransformer {
+    private static int fromQuality = 255;
+    private static int toQuality = 60;
+
+    public MappingQualityReadTransformer(final int fromQuality, final int toQuality) {
+        this.fromQuality = fromQuality;
+        this.toQuality = toQuality;
+    }
+
+    @Override
+    public GATKRead apply(final GATKRead read) {
+        if (read.getMappingQuality() == fromQuality) {
+            read.setMappingQuality(toQuality);
+        }
+        return read;
+    }
+}

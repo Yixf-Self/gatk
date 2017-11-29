@@ -14,6 +14,7 @@ import org.broadinstitute.hellbender.engine.TwoPassReadWalker;
 import org.broadinstitute.hellbender.engine.filters.ReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary;
 import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.transformers.MappingQualityReadTransformer;
 import org.broadinstitute.hellbender.transformers.NDNCigarReadTransformer;
 import org.broadinstitute.hellbender.transformers.ReadTransformer;
 import org.broadinstitute.hellbender.utils.GenomeLocParser;
@@ -127,7 +128,6 @@ public final class SplitNCigarReads extends TwoPassReadWalker {
 
     private SAMFileGATKReadWriter outputWriter;
     private OverhangFixingManager overhangManager;
-    ReadTransformer rnaReadTransform;
     private IndexedFastaSequenceFile referenceReader;
     SAMFileHeader header;
 
@@ -137,14 +137,33 @@ public final class SplitNCigarReads extends TwoPassReadWalker {
     }
 
     @Override
+    public ReadTransformer makePreReadFilterTransformer(){
+        if (REFACTOR_NDN_CIGAR_READS) {
+            return new NDNCigarReadTransformer();
+        }
+        else {
+            return ReadTransformer.identity();
+        }
+    }
+
+    //FIXME: once the engine accepts read transformer arguments, remove these magic numbers?
+    private static int FROM_QUALITY = 255;
+    private static int TO_QUALITY = 60;
+
+
+    @Override
     public ReadTransformer makePostReadFilterTransformer(){
-        return ReadTransformer.identity();
+        if (SKIP_MQ_TRANSFORM) {
+            return ReadTransformer.identity();
+        }
+        else {
+            return new MappingQualityReadTransformer(FROM_QUALITY, TO_QUALITY);
+        }
     }
 
     @Override
     public void onTraversalStart() {
         header = getHeaderForSAMWriter();
-        rnaReadTransform = REFACTOR_NDN_CIGAR_READS ? new NDNCigarReadTransformer() : ReadTransformer.identity();
         try {
             referenceReader = new CachingIndexedFastaSequenceFile(referenceArguments.getReferenceFile());
             GenomeLocParser genomeLocParser = new GenomeLocParser(getBestAvailableSequenceDictionary());
@@ -158,12 +177,12 @@ public final class SplitNCigarReads extends TwoPassReadWalker {
 
     @Override
     protected void firstPassApply(GATKRead read, ReferenceContext bytes, FeatureContext featureContext) {
-        splitNCigarRead(rnaReadTransform.apply(read),overhangManager, true, header, processSecondaryAlignments);
+        splitNCigarRead(read,overhangManager, true, header, processSecondaryAlignments);
     }
 
     @Override
     protected void secondPassApply(GATKRead read, ReferenceContext bytes, FeatureContext featureContext) {
-        splitNCigarRead(rnaReadTransform.apply(read),overhangManager, true, header, processSecondaryAlignments);
+        splitNCigarRead(read,overhangManager, true, header, processSecondaryAlignments);
     }
 
     // Activates writing in the manager, which destinguishes each pass

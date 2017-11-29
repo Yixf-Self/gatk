@@ -43,13 +43,49 @@ import java.util.function.Function;
 
 
 /**
- * This tool imports GVCFs to GenomicsDB. To run this tool,
- * 1. A single interval must be provided
- * 2. The tool accepts multiple GVCFs each of which must contain data
- *    for one sample
- * 3. The path to the GenomicsDB workspace must be specified
- * 4. User may optionally specify paths to which to write JSON files
+ * Import single-sample GVCFs into GenomicsDB before joint genotyping
  *
+ * The current GATK4 Best Practices for SNP and INDEL Calling use GenomicsDBImport to merge GVCFs from multiple samples, thus
+ *
+ * GenomicsDB is a utility built on top of TileDB, both open-source projects started by the Intel Science and Technology
+ * Center for Big Data. In brief, the underlying TileDB is a format for efficiently representing sparse data. Genomics
+ * data is typically sparse in that each sample has sparse variants with respect to the entire reference genome.
+ * GenomicsDB contains code to specialize TileDB for genomics applications, such as VCF parsing and INFO field annotation
+ * calculation. For more details about GenomicsDB see the github wiki at https://github.com/Intel-HLS/GenomicsDB/wiki/
+ *
+ * The GenomicsDB format is not meant to be acce
+ *
+ * <h3>Input</h3>
+ * <p>
+ * One or more GVCFs produced by in HaplotypeCaller with the `-ERC GVCF` or `-ERC BP_RESOLUTION` settings, containing
+ * the samples to joint-genotype.
+ * </p>
+ *
+ * <h3>Output</h3>
+ * <p>
+ * A GenomicsDB workspace
+ * </p>
+ *
+ *  <h3>Usage example</h3>
+ *  <pre>
+ *    ./gatk-launch --javaOptions "-Xmx4g -Xms4g" \
+ *    GenomicsDBImport \
+ *       -genomicsDBWorkspace project_gdb \
+ *       -batchSize 50 \
+ *       -L chr1:1000-10000 \
+ *       -sampleNameMap cohort.sample_map \
+ *       -readerThreads 5
+ *  </pre>
+ *
+ * <h3>Caveats</h3>
+ * <ul>
+ *     <li>A single interval must be provided</li>
+ *     <li>Each input gVCF must contain only one sample</li>
+ *     <li>Input GVCFs cannot contain multiple entries for a single genomic position</li>
+ *     <li>Currently, a GenomicsDB must be used from the directory structure in which it was created. If copied between file systems, the absolute path must be the same at the destination.</li>
+ * </ul>
+ *
+ * <h3>Developer Note</h3>
  * To read data from GenomicsDB, use the query interface GenomicsDBFeatureReader
  */
 @DocumentedFeature
@@ -64,25 +100,32 @@ public final class GenomicsDBImport extends GATKTool {
     private static final long DEFAULT_SEGMENT_SIZE = 1048576L;
     private static final int DEFAULT_ZERO_BATCH_SIZE = 0;
 
-    public static final String WORKSPACE_ARG_NAME = "genomicsDBWorkspace";
-    public static final String SEGMENT_SIZE_ARG_NAME = "genomicsDBSegmentSize";
-    public static final String OVERWRITE_WORKSPACE_NAME = "overwriteExistingGenomicsDBWorkspace";
+    public static final String WORKSPACE_ARG_SHORT_NAME = "genomicsDBWorkspace";
+    public static final String WORKSPACE_ARG_LONG_NAME = "genomicsdb-workspace-path";
+    public static final String SEGMENT_SIZE_ARG_LONG_NAME = "genomicsdb-segment-size";
+    public static final String SEGMENT_SIZE_ARG_SHORT_NAME = "genomicsDBSegmentSize";
+    public static final String OVERWRITE_WORKSPACE_LONG_NAME = "overwrite-existing-genomicsdb-workspace";
+    public static final String OVERWRITE_WORKSPACE_SHORT_NAME = "overwriteExistingGenomicsDBWorkspace";
 
     public static final String VCF_BUFFER_SIZE_ARG_NAME = "genomicsDBVCFBufferSize";
 
-    public static final String BATCHSIZE_ARG_NAME = "batchSize";
+    public static final String BATCHSIZE_ARG_SHORT_NAME = "batchSize";
+    public static final String BATCHSIZE_ARG_LONG_NAME = "batch-size";
     public static final String CONSOLIDATE_ARG_NAME = "consolidate";
-    public static final String SAMPLE_NAME_MAP_LONG_NAME = "sampleNameMap";
-    public static final String VALIDATE_SAMPLE_MAP_LONG_NAME = "validateSampleNameMap";
-    public static final String VCF_INITIALIZER_THREADS_LONG_NAME = "readerThreads";
+    public static final String SAMPLE_NAME_MAP_LONG_NAME = "sample-name-map";
+    public static final String SAMPLE_NAME_MAP_SHORT_NAME = "sampleNameMap";
+    public static final String VALIDATE_SAMPLE_MAP_LONG_NAME = "validate-sample-name-map";
+    public static final String VALIDATE_SAMPLE_MAP_SHORT_NAME = "validateSampleNameMap";
+    public static final String VCF_INITIALIZER_THREADS_LONG_NAME = "reader-threads";
+    public static final String VCF_INITIALIZER_THREADS_SHORT_NAME = "readerThreads";
 
-    @Argument(fullName = WORKSPACE_ARG_NAME,
-              shortName = WORKSPACE_ARG_NAME,
-              doc = "Workspace for GenomicsDB. Has to be a POSIX file system path")
+    @Argument(fullName = WORKSPACE_ARG_LONG_NAME,
+              shortName = WORKSPACE_ARG_SHORT_NAME,
+              doc = "Workspace for GenomicsDB. Must be a POSIX file system path, but can be a relative path.")
     private String workspace;
 
-    @Argument(fullName = SEGMENT_SIZE_ARG_NAME,
-              shortName = SEGMENT_SIZE_ARG_NAME,
+    @Argument(fullName = SEGMENT_SIZE_ARG_LONG_NAME,
+              shortName = SEGMENT_SIZE_ARG_SHORT_NAME,
               doc = "Buffer size in bytes allocated for GenomicsDB attributes during " +
                     "import. Should be large enough to hold data from one site. " +
                     " Defaults to " + DEFAULT_SEGMENT_SIZE,
@@ -109,16 +152,16 @@ public final class GenomicsDBImport extends GATKTool {
               minRecommendedValue = 10 * 1024)
     private long vcfBufferSizePerSample = DEFAULT_VCF_BUFFER_SIZE_PER_SAMPLE;
 
-    @Argument(fullName = OVERWRITE_WORKSPACE_NAME,
-              shortName = OVERWRITE_WORKSPACE_NAME,
+    @Argument(fullName = OVERWRITE_WORKSPACE_LONG_NAME,
+              shortName = OVERWRITE_WORKSPACE_SHORT_NAME,
               doc = "Will overwrite given workspace if it exists. " +
                     "Otherwise a new workspace is created. " +
                     "Defaults to false",
               optional = true)
     private Boolean overwriteExistingWorkspace = false;
 
-    @Argument(fullName = BATCHSIZE_ARG_NAME,
-              shortName = BATCHSIZE_ARG_NAME,
+    @Argument(fullName = BATCHSIZE_ARG_LONG_NAME,
+              shortName = BATCHSIZE_ARG_SHORT_NAME,
               doc = "Batch size controls the number of samples for which readers are open at once " +
                     "and therefore provides a way to minimize memory consumption. However, it can take longer to complete. " +
                     "Use the consolidate flag if more than a hundred batches were used. This will improve feature read time. " +
@@ -141,7 +184,7 @@ public final class GenomicsDBImport extends GATKTool {
 
     @Advanced
     @Argument(fullName = SAMPLE_NAME_MAP_LONG_NAME,
-            shortName = SAMPLE_NAME_MAP_LONG_NAME,
+            shortName = SAMPLE_NAME_MAP_SHORT_NAME,
             doc = "Path to file containing a mapping of sample name to file uri in tab delimited format.  If this is " +
                     "specified then the header from the first sample will be treated as the merged header rather than " +
                     "merging the headers, and the sample names will be taken from this file.  This may be used to rename " +
@@ -154,7 +197,7 @@ public final class GenomicsDBImport extends GATKTool {
     @Argument(fullName = VALIDATE_SAMPLE_MAP_LONG_NAME,
             shortName = VALIDATE_SAMPLE_MAP_LONG_NAME,
             doc = "Boolean flag to enable checks on the sampleNameMap file. If true, tool checks whether" +
-                "feature readers are valid and shows a warning if sample names do not match with the headers." +
+                "feature readers are valid and shows a warning if sample names do not match with the headers. " +
                 "Defaults to false",
             optional = true)
     private Boolean validateSampleToReaderMap = false;
@@ -162,7 +205,7 @@ public final class GenomicsDBImport extends GATKTool {
     @Advanced
     @Argument(fullName = VCF_INITIALIZER_THREADS_LONG_NAME,
             shortName = VCF_INITIALIZER_THREADS_LONG_NAME,
-            doc = "how many simultaneous threads to use when opening VCFs in batches, higher values may improve performance " +
+            doc = "How many simultaneous threads to use when opening VCFs in batches; higher values may improve performance " +
                     "when network latency is an issue",
             optional = true,
             minValue = 1)

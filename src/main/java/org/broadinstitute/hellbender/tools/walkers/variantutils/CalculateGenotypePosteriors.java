@@ -90,12 +90,12 @@ import java.util.*;
  *   -O output.vcf
  * </pre>
  *
- * <h4>Inform the genotype assignment of a single sample using the 1000G_EUR European panel</h4>
+ * <h4>Inform the genotype assignment of a single sample using the 1000G phase 3 samples</h4>
  * <pre>
  * gatk-launch --javaOptions "-Xmx4g" CalculateGenotypePosteriors \
  *   -V sample_input.vcf \
- *   -O sample_output.1000G_EUR.vcf \
- *   -supporting 1000G_EUR.genotypes.vcf
+ *   -O sample_output.1000G_PPs.vcf \
+ *   -supporting 1000G.phase3.integrated.sites_only.no_MATCHED_REV.hg38.vcf
  * </pre>
  *
  * <h4>Apply only family priors to a callset</h4>
@@ -117,13 +117,13 @@ import java.util.*;
  * </pre>
  *
  * <h4>Calculate the posterior genotypes of a callset, and impose that a variant *not seen* in the external panel
- * is tantamount to being AC=0, AN=100 within that panel</h4>
+ * is tantamount to being AC=0, AN=5008 within that panel</h4>
  * <pre>
  * gatk-launch --javaOptions "-Xmx4g" CalculateGenotypePosteriors \
  *   -V input.vcf \
  *   -O output.vcf \
- *   -supporting external.panel.vcf \
- *   --numRefSamplesIfNoCall 100
+ *   -supporting 1000G.phase3.integrated.sites_only.no_MATCHED_REV.hg38.vcf \
+ *   --numRefSamplesIfNoCall 2504
  * </pre>
  *
  * <h3>Caveat</h3>
@@ -158,7 +158,7 @@ public final class CalculateGenotypePosteriors extends VariantWalker {
      * across alleles. The calculation for this parameter is (Effective population size) * (steady state mutation rate)
      *
      */
-     @Argument(fullName="globalPrior",shortName="G",doc="Global Dirichlet prior parameters for the allele frequency",optional=true)
+     @Argument(fullName="global-prior",shortName="G",doc="Global Dirichlet prior parameters for the allele frequency",optional=true)
      public double globalPrior = HomoSapiensConstants.SNP_HETEROZYGOSITY;
 
     /**
@@ -166,7 +166,7 @@ public final class CalculateGenotypePosteriors extends VariantWalker {
      * mutations suggests a default value of 10^-6.
      *
      */
-    @Argument(fullName="deNovoPrior",shortName="DNP",doc="Prior for de novo mutations",optional=true)
+    @Argument(fullName="de-novo-prior",shortName="DNP",doc="Prior for de novo mutations",optional=true)
     public double deNovoPrior = 1e-6;
 
     /**
@@ -175,7 +175,7 @@ public final class CalculateGenotypePosteriors extends VariantWalker {
      * AN=2000". This is applied across all external panels, so if numRefIsMissing = 10, and the variant is absent in
      * two panels, this confers evidence of AC=0,AN=20.
      */
-    @Argument(fullName="numRefSamplesIfNoCall",shortName="nrs",doc="Number of hom-refs sites to infer at sites not present in a panel",optional=true)
+    @Argument(fullName="num-reference-samples",shortName="nrs",doc="Number of hom-ref genotypes to infer at sites not present in a panel",optional=true)
     public int numRefIfMissing = 0;
 
     /**
@@ -183,7 +183,7 @@ public final class CalculateGenotypePosteriors extends VariantWalker {
      * flag is set, the behavior is flipped and the tool looks first for the AC field and then fall back to MLEAC or
      * raw genotypes.
      */
-    @Argument(fullName="defaultToAC",shortName="useAC",doc="Use AC rather than MLEAC",optional=true)
+    @Argument(fullName="default-to-allele-count",shortName="useAC",doc="Use AC rather than MLEAC",optional=true)
     public boolean defaultToAC = false;
 
     /**
@@ -191,26 +191,26 @@ public final class CalculateGenotypePosteriors extends VariantWalker {
      * will not use the discovered allele frequency in the callset whose posteriors are being calculated. Useful for
      * callsets containing related individuals.
      */
-    @Argument(fullName="ignoreInputSamples",shortName="ext",doc="Use external information only",optional=true)
+    @Argument(fullName="ignore-input-samples",shortName="ext",doc="Use external information only",optional=true)
     public boolean ignoreInputSamples = false;
 
     /**
      * Calculate priors for missing external variants from sample data -- default behavior is to apply flat priors
      */
-    @Argument(fullName="discoveredACpriorsOff",shortName="useACoff",doc="Do not use discovered allele count in the input callset " +
+    @Argument(fullName="discovered-allele-count-priors-off",shortName="useACoff",doc="Do not use discovered allele count in the input callset " +
             "for variants that do not appear in the external callset. ", optional=true)
     public boolean useACoff = false;
 
     /**
      * Skip application of population-based priors
      */
-    @Argument(fullName="skipPopulationPriors",shortName="skipPop",doc="Skip application of population-based priors", optional=true)
+    @Argument(fullName="skip-population-priors",shortName="skipPop",doc="Skip application of population-based priors", optional=true)
     public boolean skipPopulationPriors = false;
 
     /**
      * Skip application of family-based priors. Note: if pedigree file is absent, family-based priors will always be skipped.
      */
-    @Argument(fullName="skipFamilyPriors",shortName="skipFam",doc="Skip application of family-based priors", optional=true)
+    @Argument(fullName="skip-family-priors",shortName="skipFam",doc="Skip application of family-based priors", optional=true)
     public boolean skipFamilyPriors = false;
 
     /**

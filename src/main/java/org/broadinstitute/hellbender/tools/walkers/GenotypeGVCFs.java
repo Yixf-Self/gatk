@@ -30,15 +30,16 @@ import java.util.*;
  * Perform joint genotyping on one or more samples pre-called with HaplotypeCaller
  *
  * <p>
- * This tool is designed to perform joint genotyping on multiple samples pre-called with HaplotypeCaller to produce a
- * multi-sample callset in a highly scalable manner. However it can also be run on a single sample at a time to produce
- * a single-sample callset. In any case, the input samples must possess genotype likelihoods produced by HaplotypeCaller
- * with `-ERC GVCF` or `-ERC BP_RESOLUTION`.
+ * This tool is designed to perform joint genotyping on a single input, which may contain one or many samples. In any
+ * case, the input samples must possess genotype likelihoods produced by HaplotypeCaller with `-ERC GVCF` or
+ * `-ERC BP_RESOLUTION`.
+ *
  *
  * <h3>Input</h3>
  * <p>
- * One or more GVCFs produced by in HaplotypeCaller with the `-ERC GVCF` or `-ERC BP_RESOLUTION` settings, containing
- * the samples to joint-genotype.
+ * The GATK4 GenotypeGVCFs tool can take only one input track.  Options are 1) a single single-sample GVCF 2) a single
+ * multi-sample GVCF created by CombineGVCFs or 3) a GenomicsDB workspace created by GenomicsDBImport. The original
+ * GVCFs should be produced by in HaplotypeCaller with the `-ERC GVCF` or `-ERC BP_RESOLUTION` settings.
  * </p>
  *
  * <h3>Output</h3>
@@ -48,21 +49,19 @@ import java.util.*;
  *
  * <h3>Usage example</h3>
  *
- * <h4>Perform joint genotyping on a set of GVCFs enumerated in the command line</h4>
+ * <h4>Perform joint genotyping on a single single-sample GVCF or a single multi-sample GVCF</h4>
  * <pre>
  * gatk-launch --javaOptions "-Xmx4g" GenotypeGVCFs \
- *   -R reference.fasta \
- *   -V input1.g.vcf \
- *   -V input2.g.vcf \
- *   -V input3.g.vcf \
+ *   -R Homo_sapiens_assembly38.fasta \
+ *   -V input.g.vcf \
  *   -O output.vcf
  * </pre>
  *
- * <h4>Perform joint genotyping on a set of GVCFs listed in a text file, one per line</h4>
+ * <h4>Perform joint genotyping on GenomicsDB workspace created with GenomicsDBImport</h4>
  * <pre>
  * gatk-launch --javaOptions "-Xmx4g" GenotypeGVCFs \
- *   -R reference.fasta \
- *   -V input_gvcfs.list \
+ *   -R Homo_sapiens_assembly38.fasta \
+ *   -V gendb://project_gdb \
  *   -O output.vcf
  * </pre>
  *
@@ -76,12 +75,14 @@ import java.util.*;
  * for non-diploid organisms.</p>
  *
  */
-@CommandLineProgramProperties(summary = "Perform joint genotyping on one or more samples pre-called with HaplotypeCaller", oneLineSummary = "Perform joint genotyping on one or more samples pre-called with HaplotypeCaller", programGroup = VariantProgramGroup.class)
+@CommandLineProgramProperties(summary = "Perform joint genotyping on one or more samples pre-called with HaplotypeCaller",
+        oneLineSummary = "Perform joint genotyping on one or more samples pre-called with HaplotypeCaller",
+        programGroup = VariantProgramGroup.class)
 @DocumentedFeature
 public final class GenotypeGVCFs extends VariantWalker {
 
     public static final String PHASED_HOM_VAR_STRING = "1|1";
-    public static final String ONLY_OUTPUT_CALLS_STARTING_IN_INTERVALS_FULL_NAME = "onlyOutputCallsStartingInIntervals";
+    public static final String ONLY_OUTPUT_CALLS_STARTING_IN_INTERVALS_FULL_NAME = "only-output-calls-starting-in-intervals";
     private static final String GVCF_BLOCK = "GVCFBlock";
 
     @Argument(fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME, shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
