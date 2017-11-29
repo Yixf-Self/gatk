@@ -113,11 +113,7 @@ public class Main {
      *
      * @param args The Array of command-line arguments.
      */
-    protected static void parseArgsForConfigSetupAndGetNewArgs(final String[] args) {
-        // Now we setup our configurations:
-        // This method will modify the given argArrayList to remove the gatkConfigFileOption and value
-        // if they are specified.  This is so that the later validation of commandline arguments can still
-        // happen properly and so that we can have the configuration initialized as early as possible.
+    protected void parseArgsForConfigSetupAndGetNewArgs(final String[] args) {
         ConfigUtils.initializeConfigurationsFromCommandLineArgs(args, "--" + StandardArgumentDefinitions.GATK_CONFIG_FILE_OPTION);
     }
 
@@ -296,7 +292,7 @@ public class Main {
     /**
      * Returns the command line program specified, or prints the usage and exits with exit code 1 *
      */
-    private static CommandLineProgram extractCommandLineProgram(final String[] args,
+    private CommandLineProgram extractCommandLineProgram(final String[] args,
                                                                 final List<String> packageList,
                                                                 final List<Class<? extends CommandLineProgram>> classList,
                                                                 final String commandLineName,
@@ -437,7 +433,7 @@ public class Main {
         }
     }
 
-    private static void printUsage(final PrintStream destinationStream, final Set<Class<?>> classes, final String commandLineName) {
+    private void printUsage(final PrintStream destinationStream, final Set<Class<?>> classes, final String commandLineName) {
         final StringBuilder builder = new StringBuilder();
         builder.append(BOLDRED + "USAGE: " + commandLineName + " " + GREEN + "<program name>" + BOLDRED + " [-h]\n\n" + KNRM)
                 .append(BOLDRED + "Available Programs:\n" + KNRM);
@@ -510,7 +506,7 @@ public class Main {
     /**
      * @return A display name to be used for the tool who's class is {@code clazz}.
      */
-    protected static String getDisplayNameForToolClass(Class<?> clazz) {
+    protected String getDisplayNameForToolClass(final Class<?> clazz) {
         return RuntimeUtils.toolDisplayName(clazz);
     }
 
