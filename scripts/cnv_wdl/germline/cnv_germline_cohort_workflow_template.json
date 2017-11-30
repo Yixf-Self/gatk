@@ -6,5 +6,6 @@
   "CNVGermlineCohortWorkflow.cohort_entity_id": "String",
   "CNVGermlineCohortWorkflow.ref_fasta_dict": "File",
   "CNVGermlineCohortWorkflow.ref_fasta_fai": "File",
-  "CNVGermlineCohortWorkflow.ref_fasta": "File"
+  "CNVGermlineCohortWorkflow.ref_fasta": "File",
+  "CNVGermlineCohortWorkflow.num_intervals_per_scatter": "Int"
 }

@@ -167,3 +167,36 @@ task CollectAllelicCounts {
         File allelic_counts = allelic_counts_filename
     }
 }
+
+task ScatterIntervals {
+    File interval_list
+    Int num_intervals_per_scatter
+
+    # Runtime parameters
+    Int? mem
+    String gatk_docker
+    Int? preemptible_attempts
+    Int? disk_space_gb
+
+    String base_filename = basename(interval_list, ".interval_list")
+
+    command <<<
+        set -e
+
+        grep @ ${interval_list} > header.txt
+        grep -v @ ${interval_list} > all_intervals.txt
+        split -l ${num_intervals_per_scatter} --numeric-suffixes all_intervals.txt ${base_filename}.scattered.
+        for i in ${base_filename}.scattered.*; do cat header.txt $i > $i.interval_list; done
+    >>>
+
+    runtime {
+        docker: "${gatk_docker}"
+        memory: select_first([mem, 2]) + " GB"
+        disks: "local-disk " + select_first([disk_space_gb, 40]) + " HDD"
+        preemptible: select_first([preemptible_attempts, 5])
+    }
+
+    output {
+        Array[File] scattered_interval_lists = glob("${base_filename}.scattered.*.interval_list")
+    }
+}
