@@ -4,6 +4,7 @@ import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.SAMFlag;
 import htsjdk.samtools.SAMReadGroupRecord;
+import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -14,6 +15,7 @@ import org.broadinstitute.barclay.argparser.*;
 import org.broadinstitute.barclay.help.DocumentedFeature;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.cmdline.programgroups.StructuralVariationSparkProgramGroup;
+import org.broadinstitute.hellbender.engine.datasources.ReferenceMultiSource;
 import org.broadinstitute.hellbender.engine.spark.GATKSparkTool;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.*;
 import org.broadinstitute.hellbender.tools.spark.sv.evidence.AlignedAssemblyOrExcuse;
@@ -27,6 +29,7 @@ import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
 import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignmentUtils;
 import org.broadinstitute.hellbender.utils.fermi.FermiLiteAssembly;
+import org.broadinstitute.hellbender.utils.read.GATKRead;
 import scala.Serializable;
 
 import java.util.List;
@@ -89,17 +92,21 @@ public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
             evidenceAndAssemblyArgs.externalEvidenceFile = discoverStageArgs.cnvCallsFile;
         }
 
-        final SAMFileHeader header = getHeaderForReads();
-
-        final String sampleId = SVUtils.getSampleId(header);
+        JavaRDD<GATKRead> unfilteredReads = getUnfilteredReads();
+        final SAMFileHeader headerForReads = getHeaderForReads();
+        final Broadcast<SAMFileHeader> headerBroadcast = ctx.broadcast(headerForReads);
+        final Broadcast<ReferenceMultiSource> referenceMultiSourceBroadcast = ctx.broadcast(getReference());
+        final SAMSequenceDictionary refSequenceDictionary = headerForReads.getSequenceDictionary();
+        final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary = ctx.broadcast(refSequenceDictionary);
+        final String sampleId = SVUtils.getSampleId(headerForReads);
 
         // gather evidence, run assembly, and align
         final FindBreakpointEvidenceSpark.AssembledEvidenceResults assembledEvidenceResults =
                 FindBreakpointEvidenceSpark
                         .gatherEvidenceAndWriteContigSamFile(ctx,
                                 evidenceAndAssemblyArgs,
-                                header,
-                                getUnfilteredReads(),
+                                headerForReads,
+                                unfilteredReads,
                                 outputAssemblyAlignments,
                                 localLogger);
 
@@ -108,14 +115,16 @@ public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
 
         // parse the contig alignments and extract necessary information
         final JavaRDD<AlignedContig> parsedAlignments =
-                new InMemoryAlignmentParser(ctx, assembledEvidenceResults.getAlignedAssemblyOrExcuseList(), header).getAlignedContigs();
+                new InMemoryAlignmentParser(ctx, assembledEvidenceResults.getAlignedAssemblyOrExcuseList(), headerForReads)
+                        .getAlignedContigs();
         // todo: when we call imprecise variants don't return here
         if(parsedAlignments.isEmpty()) return;
 
         final List<EvidenceTargetLink> evidenceTargetLinks = assembledEvidenceResults.getEvidenceTargetLinks();
         final PairedStrandedIntervalTree<EvidenceTargetLink> evidenceLinkTree = makeEvidenceLinkTree(evidenceTargetLinks);
 
-        final Broadcast<SVIntervalTree<VariantContext>> broadcastCNVCalls = DiscoverVariantsFromContigAlignmentsSAMSpark.broadcastCNVCalls(ctx, header, sampleId, discoverStageArgs);
+        final Broadcast<SVIntervalTree<VariantContext>> broadcastCNVCalls =
+                DiscoverVariantsFromContigAlignmentsSAMSpark.broadcastCNVCalls(ctx, headerForReads, sampleId, discoverStageArgs);
 
         // discover variants and write to vcf
         DiscoverVariantsFromContigAlignmentsSAMSpark
@@ -123,8 +132,8 @@ public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
                         parsedAlignments,
                         assembledEvidenceResults.getAssembledIntervals(),
                         discoverStageArgs,
-                        ctx.broadcast(getReference()),
-                        ctx.broadcast(header.getSequenceDictionary()),
+                        referenceMultiSourceBroadcast,
+                        broadcastSequenceDictionary,
                         vcfOutputFileName,
                         localLogger,
                         evidenceLinkTree,
