@@ -100,18 +100,18 @@ public final class SvDiscoverFromLocalAssemblyContigAlignmentsSpark extends GATK
         final EnumMap<RawTypes, JavaRDD<AssemblyContigWithFineTunedAlignments>> contigsByPossibleRawTypes =
                 preprocess(reads, headerBroadcast, broadcastSequenceDictionary, nonCanonicalChromosomeNamesFile, outputDir, writeSAMFiles, localLogger);
 
-        dispatchJobs(sampleId, contigsByPossibleRawTypes, referenceMultiSourceBroadcast, broadcastSequenceDictionary);
+        dispatchJobs(sampleId, outputDir, contigsByPossibleRawTypes, referenceMultiSourceBroadcast, broadcastSequenceDictionary, localLogger);
     }
 
     //==================================================================================================================
 
-    private static EnumMap<RawTypes, JavaRDD<AssemblyContigWithFineTunedAlignments>> preprocess(final JavaRDD<GATKRead> reads,
-                                                                                                final Broadcast<SAMFileHeader> headerBroadcast,
-                                                                                                final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary,
-                                                                                                final String nonCanonicalChromosomeNamesFile,
-                                                                                                final String outputDir,
-                                                                                                final boolean writeSAMFiles,
-                                                                                                final Logger localLogger) {
+    public static EnumMap<RawTypes, JavaRDD<AssemblyContigWithFineTunedAlignments>> preprocess(final JavaRDD<GATKRead> reads,
+                                                                                               final Broadcast<SAMFileHeader> headerBroadcast,
+                                                                                               final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary,
+                                                                                               final String nonCanonicalChromosomeNamesFile,
+                                                                                               final String outputDir,
+                                                                                               final boolean writeSAMFiles,
+                                                                                               final Logger localLogger) {
         // filter alignments and split the gaps, hence the name "reconstructed"
         final JavaRDD<AlignedContig> contigsWithChimericAlignmentsReconstructed =
                 FilterLongReadAlignmentsSAMSpark
@@ -132,24 +132,25 @@ public final class SvDiscoverFromLocalAssemblyContigAlignmentsSpark extends GATK
     //==================================================================================================================
 
     // TODO: 11/21/17 insertion mappings are dropped here in this implementation, must get them back for ticket #3647
-    private void dispatchJobs(final String sampleId,
-                              final EnumMap<RawTypes, JavaRDD<AssemblyContigWithFineTunedAlignments>> contigsByPossibleRawTypes,
-                              final Broadcast<ReferenceMultiSource> referenceMultiSourceBroadcast,
-                              final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary) {
+    public static void dispatchJobs(final String sampleId, final String outputDir,
+                                    final EnumMap<RawTypes, JavaRDD<AssemblyContigWithFineTunedAlignments>> contigsByPossibleRawTypes,
+                                    final Broadcast<ReferenceMultiSource> referenceMultiSourceBroadcast,
+                                    final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary,
+                                    final Logger localLogger) {
 
         new InsDelVariantDetector()
                 .inferSvAndWriteVCF(contigsByPossibleRawTypes.get(RawTypes.InsDel).map(decoratedTig -> decoratedTig.contig),
-                        outputDir+"/"+ RawTypes.InsDel.name()+".vcf",
+                        outputDir +"/"+ RawTypes.InsDel.name()+".vcf",
                         referenceMultiSourceBroadcast, broadcastSequenceDictionary, localLogger, sampleId);
 
         new SimpleStrandSwitchVariantDetector()
                 .inferSvAndWriteVCF(contigsByPossibleRawTypes.get(RawTypes.IntraChrStrandSwitch).map(decoratedTig -> decoratedTig.contig),
-                        outputDir+"/"+ RawTypes.IntraChrStrandSwitch.name()+".vcf",
+                        outputDir +"/"+ RawTypes.IntraChrStrandSwitch.name()+".vcf",
                         referenceMultiSourceBroadcast, broadcastSequenceDictionary, localLogger, sampleId);
 
         new SuspectedTransLocDetector()
                 .inferSvAndWriteVCF(contigsByPossibleRawTypes.get(RawTypes.MappedInsertionBkpt).map(decoratedTig -> decoratedTig.contig),
-                        outputDir+"/"+ RawTypes.MappedInsertionBkpt.name()+".vcf",
+                        outputDir +"/"+ RawTypes.MappedInsertionBkpt.name()+".vcf",
                         referenceMultiSourceBroadcast, broadcastSequenceDictionary, localLogger, sampleId);
     }
 
