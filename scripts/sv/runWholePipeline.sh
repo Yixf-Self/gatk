@@ -64,6 +64,7 @@ NUM_EXECUTORS=$((2 * ${NUM_WORKERS}))
     --fastqDir "${PROJECT_OUTPUT_DIR}/fastq" \
     --contigSAMFile "${PROJECT_OUTPUT_DIR}/assemblies.sam" \
     --targetLinkFile ${PROJECT_OUTPUT_DIR}/target_links.bedpe \
+    --alsoRunPrototypingInterpreter \
     ${SV_ARGS} \
     -- \
     --sparkRunner GCS \
