@@ -4,7 +4,7 @@
   "CNVGermlineCohortWorkflow.gatk_docker": "__GATK_DOCKER__",
   "CNVGermlineCohortWorkflow.intervals": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/chr20xyinterval_list",
   "CNVGermlineCohortWorkflow.normal_bams_list": "/home/travis/build/broadinstitute/gatk/scripts/cnv_cromwell_tests/germline/cnv_germline_cohort_input.tsv",
-  "CNVGermlineCohortWorkflow.num_intervals_per_scatter": "100",
+  "CNVGermlineCohortWorkflow.num_intervals_per_scatter": "50",
   "CNVGermlineCohortWorkflow.PreprocessIntervals.bin_length": "20000",
   "CNVGermlineCohortWorkflow.ref_fasta_dict": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/Homo_sapiens_assembly19.truncated.dict",
   "CNVGermlineCohortWorkflow.ref_fasta_fai": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/Homo_sapiens_assembly19.truncated.fasta.fai",

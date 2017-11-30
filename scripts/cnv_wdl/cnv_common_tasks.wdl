@@ -1,5 +1,7 @@
 task PreprocessIntervals {
     File? intervals
+    File ref_fasta
+    File ref_fasta_fai
     File ref_fasta_dict
     Int? padding
     Int? bin_length
@@ -21,7 +23,7 @@ task PreprocessIntervals {
 
         java -Xmx${default="2" mem}g -jar $GATK_JAR PreprocessIntervals \
             ${"-L " + intervals} \
-            -sequenceDictionary ${ref_fasta_dict} \
+            --reference ${ref_fasta} \
             --padding ${default="250" padding} \
             --binLength ${default="1000" bin_length} \
             --interval_merging_rule OVERLAPPING_ONLY \
