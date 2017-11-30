@@ -1,10 +1,7 @@
 package org.broadinstitute.hellbender.tools.spark.sv;
 
 import com.google.common.annotations.VisibleForTesting;
-import htsjdk.samtools.SAMFileHeader;
-import htsjdk.samtools.SAMFlag;
-import htsjdk.samtools.SAMReadGroupRecord;
-import htsjdk.samtools.SAMSequenceDictionary;
+import htsjdk.samtools.*;
 import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -18,6 +15,9 @@ import org.broadinstitute.hellbender.cmdline.programgroups.StructuralVariationSp
 import org.broadinstitute.hellbender.engine.datasources.ReferenceMultiSource;
 import org.broadinstitute.hellbender.engine.spark.GATKSparkTool;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.*;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.prototype.AssemblyContigAlignmentSignatureClassifier;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.prototype.AssemblyContigWithFineTunedAlignments;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.prototype.SvDiscoverFromLocalAssemblyContigAlignmentsSpark;
 import org.broadinstitute.hellbender.tools.spark.sv.evidence.AlignedAssemblyOrExcuse;
 import org.broadinstitute.hellbender.tools.spark.sv.evidence.EvidenceTargetLink;
 import org.broadinstitute.hellbender.tools.spark.sv.evidence.FindBreakpointEvidenceSpark;
@@ -29,12 +29,17 @@ import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
 import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignmentUtils;
 import org.broadinstitute.hellbender.utils.fermi.FermiLiteAssembly;
+import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
+import org.broadinstitute.hellbender.utils.read.SAMRecordToGATKReadAdapter;
 import scala.Serializable;
 
+import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection.DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection;
 import static org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection.FindBreakpointEvidenceSparkArgumentCollection;
@@ -141,6 +146,52 @@ public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
                         broadcastCNVCalls,
                         sampleId
                 );
+
+        if (alsoRunPrototypingInterpreter) {
+
+            experimentalInterpretation(ctx,
+                    headerForReads,
+                    headerBroadcast,
+                    referenceMultiSourceBroadcast,
+                    refSequenceDictionary,
+                    broadcastSequenceDictionary,
+                    sampleId,
+                    assembledEvidenceResults);
+        }
+    }
+
+    // hook up prototyping breakpoint and type inference tool
+    private void experimentalInterpretation(final JavaSparkContext ctx,
+                                            final SAMFileHeader headerForReads,
+                                            final Broadcast<SAMFileHeader> headerBroadcast,
+                                            final Broadcast<ReferenceMultiSource> referenceMultiSourceBroadcast,
+                                            final SAMSequenceDictionary refSequenceDictionary,
+                                            final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary,
+                                            final String sampleId,
+                                            final FindBreakpointEvidenceSpark.AssembledEvidenceResults assembledEvidenceResults) {
+        final String expOutputDir =
+                IOUtils.getPath(vcfOutputFileName).getParent().toAbsolutePath().toString() +
+                        "/experimentalVariantInterpretations";
+        final SAMReadGroupRecord contigAlignmentsReadGroup = new SAMReadGroupRecord(SVUtils.GATKSV_CONTIG_ALIGNMENTS_READ_GROUP_ID);
+        final List<String> refNames = SequenceDictionaryUtils.getContigNamesList(refSequenceDictionary);
+
+        List<GATKRead> readsList =
+                assembledEvidenceResults
+                        .getAlignedAssemblyOrExcuseList().stream()
+                        .filter(AlignedAssemblyOrExcuse::isNotFailure)
+                        .flatMap(aa -> aa.toSAMStreamForAlignmentsOfThisAssembly(headerForReads, refNames, contigAlignmentsReadGroup))
+                        .map(SAMRecordToGATKReadAdapter::new)
+                        .collect(Collectors.toList());
+        JavaRDD<GATKRead> reads = ctx.parallelize(readsList);
+
+        EnumMap<AssemblyContigAlignmentSignatureClassifier.RawTypes, JavaRDD<AssemblyContigWithFineTunedAlignments>>
+                contigsByPossibleRawTypes =
+                SvDiscoverFromLocalAssemblyContigAlignmentsSpark.preprocess(reads, headerBroadcast,
+                broadcastSequenceDictionary, evidenceAndAssemblyArgs.crossContigsToIgnoreFile,
+                        expOutputDir, true, localLogger);
+
+        SvDiscoverFromLocalAssemblyContigAlignmentsSpark.dispatchJobs(sampleId, expOutputDir,
+                contigsByPossibleRawTypes, referenceMultiSourceBroadcast, broadcastSequenceDictionary, localLogger);
     }
 
     /**
