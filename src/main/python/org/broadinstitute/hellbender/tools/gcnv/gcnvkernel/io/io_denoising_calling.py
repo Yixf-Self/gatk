@@ -18,7 +18,7 @@ _logger = logging.getLogger(__name__)
 
 
 class DenoisingModelExporter:
-    """ Writes denoising model parameters to disk """
+    """Writes global denoising model parameters to disk"""
     def __init__(self,
                  denoising_config: DenoisingModelConfig,
                  calling_config: CopyNumberCallingConfig,
@@ -52,12 +52,12 @@ class DenoisingModelExporter:
         # export denoising config
         io_commons.export_dict_to_json_file(
             os.path.join(self.output_path, io_consts.default_denoising_config_json_filename),
-            self.denoising_config.__dict__, {})
+            self.denoising_config.__dict__, set())
 
         # export calling config
         io_commons.export_dict_to_json_file(
             os.path.join(self.output_path, io_consts.default_calling_config_json_filename),
-            self.calling_config.__dict__, {})
+            self.calling_config.__dict__, set())
 
         # export global variables in the workspace
         self._export_class_log_posterior(
@@ -69,7 +69,7 @@ class DenoisingModelExporter:
 
 
 class DenoisingModelImporter:
-    """ Reads denoising model parameters from disk """
+    """Reads global denoising model parameters from disk"""
     def __init__(self,
                  denoising_config: DenoisingModelConfig,
                  calling_config: CopyNumberCallingConfig,
@@ -100,19 +100,17 @@ class DenoisingModelImporter:
 
 
 class SampleDenoisingAndCallingPosteriorsExporter:
+    """Exports sample-specific model parameters and associated workspace variables to disk"""
     def __init__(self,
                  denoising_calling_workspace: DenoisingCallingWorkspace,
                  denoising_model: DenoisingModel,
                  denoising_model_approx: pm.MeanField,
-                 sample_names: List[str],
                  output_path: str):
         io_commons.assert_output_path_writable(output_path)
-        assert len(sample_names) == denoising_calling_workspace.num_samples
         self.denoising_calling_workspace = denoising_calling_workspace
         self.denoising_model = denoising_model
         self.denoising_model_approx = denoising_model_approx
         self.output_path = output_path
-        self.sample_names = sample_names
 
     @staticmethod
     def _export_sample_copy_number_log_posterior(sample_posterior_path: str,
@@ -144,7 +142,7 @@ class SampleDenoisingAndCallingPosteriorsExporter:
         approx_var_set, approx_mu_map, approx_std_map = io_commons.extract_meanfield_posterior_parameters(
             self.denoising_model_approx)
 
-        for si, sample_name in enumerate(self.sample_names):
+        for si, sample_name in enumerate(self.denoising_calling_workspace.sample_names):
             sample_name_comment_line = [io_consts.sample_name_header_prefix + sample_name]
             sample_posterior_path = os.path.join(self.output_path, io_consts.sample_folder_prefix + repr(si))
             _logger.info("Saving posteriors for sample \"{0}\" in \"{1}\"...".format(
@@ -167,6 +165,7 @@ class SampleDenoisingAndCallingPosteriorsExporter:
 
 
 class SampleDenoisingAndCallingPosteriorsImporter:
+    """Imports sample-specific model parameters and associated workspace variables from disk"""
     def __init__(self,
                  denoising_calling_workspace: DenoisingCallingWorkspace,
                  denoising_model: DenoisingModel,
@@ -208,7 +207,8 @@ class SampleDenoisingAndCallingPosteriorsImporter:
 
             # import sample-specific posteriors and update approximation
             io_commons.import_meanfield_sample_specific_params(
-                sample_posterior_path, si, self.denoising_model_approx, self.denoising_model)
+                sample_posterior_path, si, self.denoising_calling_workspace.sample_names[si],
+                self.denoising_model_approx, self.denoising_model)
 
             # import copy number posterior and update log_q_c_stc in workspace
             log_q_c_tc = self._import_sample_copy_number_log_posterior(sample_posterior_path)
@@ -222,5 +222,5 @@ class SampleDenoisingAndCallingPosteriorsImporter:
                     self.denoising_calling_workspace.log_q_c_stc.get_value(borrow=True)),
                 borrow=True)
 
-            # update auxiliary workspace variables
-            self.denoising_calling_workspace.update_auxiliary_vars()
+        # update auxiliary workspace variables
+        self.denoising_calling_workspace.update_auxiliary_vars()

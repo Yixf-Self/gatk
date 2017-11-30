@@ -17,7 +17,7 @@ _logger = logging.getLogger(__name__)
 
 
 class PloidyModelExporter:
-    """ Writes ploidy model parameters to disk """
+    """Writes global ploidy model parameters to disk"""
     def __init__(self,
                  ploidy_config: PloidyModelConfig,
                  ploidy_workspace: PloidyWorkspace,
@@ -57,6 +57,7 @@ class PloidyModelExporter:
 
 
 class SamplePloidyExporter:
+    """Writes sample-specific ploidy model parameters and associated workspace variables to disk"""
     def __init__(self,
                  ploidy_config: PloidyModelConfig,
                  ploidy_workspace: PloidyWorkspace,
@@ -158,9 +159,11 @@ class SamplePloidyExporter:
 
 
 class PloidyModelImporter:
-    """ Reads ploidy model parameters from disk and updates the provided approximation accordingly
-    Note: it is assumed that the provided model instance and approximation is compatible with the model
-    parameters to be imported. This has to be asserted beforehand by the CLI tool.
+    """Reads ploidy model parameters from disk and updates the provided approximation accordingly.
+
+    Note:
+        It is assumed that the provided model instance and approximation are compatible with the model
+        parameters to be imported. This has to be asserted beforehand by the CLI tool.
     """
     def __init__(self,
                  ploidy_model: PloidyModel,

@@ -344,7 +344,7 @@ def export_meanfield_global_params(output_path: str,
 def import_meanfield_global_params(input_model_path: str,
                                    approx: pm.MeanField,
                                    model: GeneralizedContinuousModel) -> None:
-    """Imports global parameters of a given model from an exported mean-field posteriors and injects them
+    """Imports global parameters of a given model from exported mean-field posteriors and injects them
     into a provided mean-field instance.
 
     Args:
@@ -392,8 +392,30 @@ def import_meanfield_global_params(input_model_path: str,
 
 def import_meanfield_sample_specific_params(input_sample_calls_path: str,
                                             sample_index: int,
+                                            sample_name: str,
                                             approx: pm.MeanField,
                                             model: GeneralizedContinuousModel):
+    """Imports sample-specific parameters of a given sample from exported mean-field posteriors and injects them
+    into a provided mean-field instance.
+
+    Args:
+        input_sample_calls_path: path to exported sample-specific posteriors
+        sample_index: index of the sample in the current instance of model/approximation
+        sample_name: name of the sample in the current instance of model/approximation
+            (used to check whether `input_sample_calls_path` actually corresponds to the sample)
+        approx: an instance of PyMC3 mean-field approximation corresponding to the provided model
+        model: the generalized model corresponding to the provided mean-field approximation
+
+    Returns:
+        None
+    """
+    path_sample_name = get_sample_name_from_txt_file(input_sample_calls_path)
+    assert path_sample_name == sample_name, \
+        "The sample name in \"{0}\" does not match the sample name at index {1}; " \
+        "found: {2}, expected: {3}. Make sure that the exported posteriors and the current " \
+        "task correspond to the same datasets and with the same order/name of samples.".format(
+            input_sample_calls_path, sample_index, path_sample_name, sample_name)
+
     vmap_list = get_var_map_list_from_meanfield_approx(approx)
 
     def _update_param_inplace(_param: np.ndarray,
@@ -402,6 +424,23 @@ def import_meanfield_sample_specific_params(input_sample_calls_path: str,
                               _sample_specific_imported_value: np.ndarray,
                               _var_sample_axis: int,
                               _sample_index: int) -> np.ndarray:
+        """Updates the ndarray buffer of the shared parameter tensor according to a given sample-specific
+        parameter for a given sample index.
+
+        Args:
+            _param: ndarray buffer of the shared parameter tensor (i.e. `mu` or `rho`)
+            _var_slice: the slice that of `_param` that yields the full view of the sample-specific
+                parameter to be updated
+            _var_shape: full shape of the sample-specific parameter to be updated
+            _sample_specific_imported_value: new single-sample slice of the sample-specific parameter
+                to be updated
+            _var_sample_axis: the sample-index axis in the full view of the sample-specific
+                parameter to be updates
+            _sample_index: sample index
+
+        Returns:
+            updated `_param`
+        """
         sample_specific_var = _param[_var_slice].reshape(_var_shape)
         sample_specific_var[_get_singleton_slice_along_axis(
             sample_specific_var, _var_sample_axis, _sample_index)] = _sample_specific_imported_value[:]
@@ -415,8 +454,8 @@ def import_meanfield_sample_specific_params(input_sample_calls_path: str,
         var_mu_input_file = _get_mu_tsv_filename(input_sample_calls_path, var_name)
         var_std_input_file = _get_std_tsv_filename(input_sample_calls_path, var_name)
         assert os.path.exists(var_mu_input_file) and os.path.exists(var_std_input_file), \
-            "Model parameter values for \"{0}\" could not be found in the calls path; " \
-            "cannot continue importing".format(var_name)
+            "Model parameter values for \"{0}\" could not be found in the provided calls " \
+            "path \"{1}\"".format(var_name, input_sample_calls_path)
 
         var_mu = read_ndarray_from_tsv(var_mu_input_file)
         var_std = read_ndarray_from_tsv(var_std_input_file)
@@ -437,15 +476,36 @@ def import_meanfield_sample_specific_params(input_sample_calls_path: str,
 
 
 def export_gcnvkernel_version(output_path: str):
+    """Writes the current gcnvkernel version as a JSON file to a given path.
+
+    Args:
+        output_path: path to write the gcnvkernel version
+
+    Returns:
+        None
+    """
     # export gcnvkernel version
     export_dict_to_json_file(
         os.path.join(output_path, io_consts.default_gcnvkernel_version_json_filename),
-        {'version': gcnvkernel_version}, {})
+        {'version': gcnvkernel_version}, set())
 
 
 def assert_mandatory_columns(mandatory_columns_set: Set[str],
                              found_columns_set: Set[str],
                              input_tsv_file: str):
+    """Asserts that a given .tsv file contains a set of mandatory header columns.
+
+    Note:
+        The set of header columns found in the .tsv file must be provided. `input_tsv_file` is only used
+        for generating exception messages.
+    Args:
+        mandatory_columns_set: set of mandatory header columns
+        found_columns_set: set of header columns found in the .tsv file
+        input_tsv_file: path to the .tsv file in question
+
+    Returns:
+        None
+    """
     not_found_set = mandatory_columns_set.difference(found_columns_set)
     assert len(not_found_set) == 0, "The following mandatory columns could not be found in \"{0}\"; " \
                                     "cannot continue: {1}".format(input_tsv_file, not_found_set)

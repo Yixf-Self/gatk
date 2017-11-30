@@ -17,6 +17,20 @@ _logger = logging.getLogger(__name__)
 def write_sample_coverage_metadata(sample_metadata_collection: SampleMetadataCollection,
                                    sample_names: List[str],
                                    output_file: str):
+    """Write coverage metadata for all samples in a given `SampleMetadataCollection` to a single .tsv file
+    in the same order as `sample_names`.
+
+    Args:
+        sample_metadata_collection: an instance of `SampleMetadataCollection`
+        sample_names: list of samples to process
+        output_file: output .tsv file
+
+    Raises:
+        AssertionError: if some of the samples do not have `SampleCoverageMetadata` annotation
+
+    Returns:
+        None
+    """
     assert len(sample_names) > 0
     assert sample_metadata_collection.all_samples_have_coverage_metadata(sample_names)
     contig_list = sample_metadata_collection.sample_coverage_metadata_dict[sample_names[0]].contig_list
@@ -36,22 +50,38 @@ def write_sample_coverage_metadata(sample_metadata_collection: SampleMetadataCol
 
 def read_sample_coverage_metadata(sample_metadata_collection: SampleMetadataCollection,
                                   input_file: str) -> List[str]:
+    """Reads sample coverage metadata from a .tsv file and adds them to `sample_metadata_collection`.
+
+    Args:
+        sample_metadata_collection: collection to which the coverage metadata is to be added
+        input_file: input sample coverage metadata .tsv file
+
+    Returns:
+        list of samples in the same order as encountered in `input_file`
+    """
     with open(input_file, 'r') as tsv_file:
         reader = csv.reader(tsv_file, delimiter='\t')
         row_num = 0
         contig_list = None
+        num_header_elems = None
+        num_contigs = None
         sample_names = []
         for row in reader:
             row_num += 1
             if row_num == 1:  # header
                 num_header_elems = len(row)
-                assert num_header_elems > 1, "malformed sample coverage metadata file"
-                assert row[0] == io_consts.sample_name_column_name, "malformed sample ploidy metadata file"
+                assert num_header_elems > 1, \
+                    "Malformed sample coverage metadata file: not enough columns"
+                assert row[0] == io_consts.sample_name_column_name, \
+                    "Malformed sample ploidy metadata file; first column found: " \
+                    "\"{0}\", expected: \"{1}\"".format(row[0], io_consts.sample_name_column_name)
                 num_contigs = num_header_elems - 1
                 contig_list = row[1:]
                 continue
 
-            assert len(row) == num_header_elems
+            assert len(row) == num_header_elems, \
+                "Malformed sample coverage metadata file; row {0} has wrong number of entries; " \
+                "found: {1}, expected: {2}".format(row_num, len(row), num_header_elems)
             sample_name = row[0]
             n_j = np.asarray([int(row[k + 1]) for k in range(num_contigs)], dtype=types.big_uint)
             sample_metadata_collection.add_sample_coverage_metadata(SampleCoverageMetadata(
@@ -66,11 +96,24 @@ def update_sample_metadata_collection_from_ploidy_determination_calls(
         input_calls_path: str,
         comment='#',
         delimiter='\t'):
+    """Reads the output of contig ploidy determination tool and updates the given instance of
+    `SampleMetadataCollection` for read depth and ploidy metadata.
+
+    Args:
+        sample_metadata_collection: the instance of `SampleMetadataCollection` to be updated
+        input_calls_path: posterior output path of contig ploidy determination tool
+        comment: comment character
+        delimiter: delimiter character
+
+    Returns:
+        None
+    """
 
     def get_sample_read_depth_metadata(input_path: str) -> SampleReadDepthMetadata:
         sample_read_depth_file = os.path.join(input_path, io_consts.default_sample_read_depth_tsv_filename)
         assert os.path.exists(sample_read_depth_file), \
-            "Sample read depth could not be found in the ploidy results located at \"{0}\"".format(input_path)
+            "Sample read depth could not be found in the contig ploidy results " \
+            "located at \"{0}\"".format(input_path)
 
         _sample_name = io_commons.extract_sample_name_from_header(sample_read_depth_file)
 
@@ -89,7 +132,8 @@ def update_sample_metadata_collection_from_ploidy_determination_calls(
     def get_sample_ploidy_metadata(input_path: str) -> SamplePloidyMetadata:
         sample_ploidy_file = os.path.join(input_path, io_consts.default_sample_contig_ploidy_tsv_filename)
         assert os.path.exists(sample_ploidy_file), \
-            "Sample ploidy results could not be found in the ploidy results located at \"{0}\"".format(input_path)
+            "Sample ploidy results could not be found in the contig ploidy results " \
+            "located at \"{0}\"".format(input_path)
 
         _sample_name = io_commons.extract_sample_name_from_header(sample_ploidy_file)
 
@@ -119,14 +163,13 @@ def update_sample_metadata_collection_from_ploidy_determination_calls(
             sample_ploidy_results_dir = os.path.join(input_calls_path, subdir)
 
             sample_name = io_commons.get_sample_name_from_txt_file(sample_ploidy_results_dir)
-
             sample_read_depth_metadata = get_sample_read_depth_metadata(sample_ploidy_results_dir)
-            assert sample_read_depth_metadata.sample_name == sample_name, \
-                "Inconsistency detected in the ploidy determination results; cannot continue"
-
             sample_ploidy_metadata = get_sample_ploidy_metadata(sample_ploidy_results_dir)
-            assert sample_ploidy_metadata.sample_name == sample_name, \
-                "Inconsistency detected in the ploidy determination results; cannot continue"
+
+            assert (sample_read_depth_metadata.sample_name == sample_name and
+                    sample_ploidy_metadata.sample_name == sample_name), \
+                "Inconsistency detected in the ploidy determination results in {0}: sample name in the .txt " \
+                "file does not match with sample name in the posterior headers".format(sample_ploidy_results_dir)
 
             sample_metadata_collection.add_sample_read_depth_metadata(sample_read_depth_metadata)
             sample_metadata_collection.add_sample_ploidy_metadata(sample_ploidy_metadata)

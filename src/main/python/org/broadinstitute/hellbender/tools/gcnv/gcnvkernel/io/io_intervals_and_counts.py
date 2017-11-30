@@ -8,6 +8,8 @@ from .. import types
 from . import io_commons
 from . import io_consts
 
+_logger = logging.getLogger(__name__)
+
 interval_dtypes_dict = {
     io_consts.contig_column_name: np.str,
     io_consts.start_column_name: types.med_uint,
@@ -19,33 +21,64 @@ read_count_dtypes_dict = {
     io_consts.count_column_name: types.med_uint
 }
 
-_logger = logging.getLogger(__name__)
-
 
 def load_read_counts_tsv_file(read_counts_tsv_file: str,
                               max_rows: Optional[int] = None,
-                              output_interval_list: bool = False) \
+                              return_interval_list: bool = False) \
         -> Tuple[str, np.ndarray, Optional[List[Interval]]]:
+    """Loads a read counts .tsv file.
+
+    Args:
+        read_counts_tsv_file: input read counts .tsv file
+        max_rows: (optional) maximum number of rows to process
+        return_interval_list: if true, an interval list will also be generated and returned
+
+    Returns:
+        sample name, counts, (and optionally a list of intervals if `return_interval_list` == True)
+    """
     sample_name = io_commons.extract_sample_name_from_header(read_counts_tsv_file)
     counts_pd = pd.read_csv(read_counts_tsv_file, delimiter='\t', comment='#', nrows=max_rows,
                             dtype={**read_count_dtypes_dict})
-    if output_interval_list:
+    if return_interval_list:
         interval_list_pd = counts_pd[list(interval_dtypes_dict.keys())]
-        interval_list = _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd)
+        interval_list = _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd, read_counts_tsv_file)
         return sample_name, counts_pd[io_consts.count_column_name].as_matrix(), interval_list
     else:
         return sample_name, counts_pd[io_consts.count_column_name].as_matrix(), None
 
 
 def load_interval_list_tsv_file(interval_list_tsv_file: str) -> List[Interval]:
+    """Loads an interval list .tsv file.
+    Args:
+        interval_list_tsv_file: input interval list .tsv file
+
+    Returns:
+        interval list
+    """
     interval_list_pd = pd.read_csv(interval_list_tsv_file, delimiter='\t',
                                    dtype={**interval_dtypes_dict, **interval_annotations_dtypes})
-    return _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd)
+    return _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd, interval_list_tsv_file)
 
 
 def load_counts_in_the_modeling_zone(read_count_file_list: List[str],
                                      modeling_interval_list: List[Interval]) -> Tuple[List[str], np.ndarray]:
-    """ Note: it is assumed that all read counts have the same intervals; this is not asserted for speed """
+    """Loads read counts for a given cohort corresponding to a provided list of intervals.
+
+    Args:
+        read_count_file_list: list of read counts .tsv files
+        modeling_interval_list: requested list of intervals
+
+    Raises:
+        AssertionError: if some of the intervals in `modeling_interval_list` are absent in the
+        provided read counts .tsv file
+
+    Note:
+        it is assumed that all read counts have the SAME intervals.
+        this assumption is not asserted for speed.
+
+    Returns:
+        list of sample names, 2-dim (sample x interval) ndarray of read counts
+    """
     num_intervals = len(modeling_interval_list)
     num_samples = len(read_count_file_list)
     assert num_samples > 0
@@ -58,12 +91,12 @@ def load_counts_in_the_modeling_zone(read_count_file_list: List[str],
     for si, read_count_file in enumerate(read_count_file_list):
         if master_interval_list is None:  # load intervals from the first read counts table
             sample_name, n_t, master_interval_list = load_read_counts_tsv_file(
-                read_count_file, output_interval_list=True)
+                read_count_file, return_interval_list=True)
             interval_to_index_map = {interval: ti for ti, interval in enumerate(master_interval_list)}
             assert all([interval in interval_to_index_map for interval in modeling_interval_list]), \
                 "Some of the modeling intervals are absent in the provided read counts .tsv file"
         else:  # do not load intervals again for speed, assume it is the same as the first sample
-            sample_name, n_t, _ = load_read_counts_tsv_file(read_count_file, output_interval_list=False)
+            sample_name, n_t, _ = load_read_counts_tsv_file(read_count_file, return_interval_list=False)
         # subset the counts in the order dictated by modeling_interval_list
         n_st[si, :] = np.asarray([n_t[interval_to_index_map[interval]]
                                   for interval in modeling_interval_list], dtype=types.med_uint)
@@ -71,22 +104,29 @@ def load_counts_in_the_modeling_zone(read_count_file_list: List[str],
     return sample_names, n_st
 
 
-def _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd: pd.DataFrame) -> List[Interval]:
-    """
-    Converts a pandas dataframe of intervals to list(Interval). Annotations will be parsed
+def _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd: pd.DataFrame,
+                                                        input_tsv_file: str) -> List[Interval]:
+    """Converts a pandas dataframe of intervals to list(Interval). Annotations will be parsed
     and added to the intervals as well.
+
+    Args:
+        interval_list_pd: interval list as a pandas dataframe
+        input_tsv_file: path to the .tsv file associated to the dataframe
+            (only used to generate exception messages)
+
+    Returns:
+        a list of intervals
     """
-    interval_list: List[Interval] = []
-    columns = [str(x) for x in interval_list_pd.columns.values]
-    assert all([required_column in columns
-                for required_column in interval_dtypes_dict.keys()]), "Some columns missing"
+    interval_list: List[Interval] = list()
+    columns = {str(x) for x in interval_list_pd.columns.values}
+    io_commons.assert_mandatory_columns(set(interval_dtypes_dict.keys()), columns, input_tsv_file)
     for contig, start, end in zip(interval_list_pd[io_consts.contig_column_name],
                                   interval_list_pd[io_consts.start_column_name],
                                   interval_list_pd[io_consts.end_column_name]):
         interval = Interval(contig, start, end)
         interval_list.append(interval)
 
-    found_annotation_keys = set(columns).intersection(interval_annotations_dict.keys())
+    found_annotation_keys = columns.intersection(interval_annotations_dict.keys())
     if len(found_annotation_keys) > 0:
         _logger.info("The given interval list provides the following interval annotations: "
                      + str(found_annotation_keys))
@@ -106,7 +146,21 @@ def _convert_interval_list_pandas_to_gcnv_interval_list(interval_list_pd: pd.Dat
 
 
 def write_interval_list_to_tsv_file(output_file: str, interval_list: List[Interval]):
-    assert len(interval_list) > 0, "can not write an empty interval list to disk"
+    """Write a list of interval list to .tsv file.
+
+    Note:
+        If all intervals have an annotation, that annotation will be written to the .tsv files.
+        If only some intervals have an annotation, that annotation will be ignored and a warning
+        will be logged.
+
+    Args:
+        output_file: output .tsv file
+        interval_list: list of intervals to write to .tsv file
+
+    Returns:
+        None
+    """
+    assert len(interval_list) > 0, "Can not write an empty interval list to disk"
     annotation_found_keys: Set[str] = set()
     for interval in interval_list:
         for key in interval.annotations.keys():
@@ -116,9 +170,9 @@ def write_interval_list_to_tsv_file(output_file: str, interval_list: List[Interv
         if all(key in interval.annotations.keys() for interval in interval_list):
             mutual_annotation_key_list.append(key)
         else:
-            _logger.warning("Only a subset of intervals contain annotation \"{0}\" ; "
-                            "cannot write this annotation to a .tsv file; "
-                            "neglecting \"{0}\" and proceeding...".format(key))
+            _logger.warning("Only a subset of intervals contain annotation \"{0}\"; "
+                            "Cannot write this annotation to a .tsv file; "
+                            "Neglecting \"{0}\" and proceeding...".format(key))
     with open(output_file, 'w') as out:
         header = '\t'.join([io_consts.contig_column_name,
                             io_consts.start_column_name,
