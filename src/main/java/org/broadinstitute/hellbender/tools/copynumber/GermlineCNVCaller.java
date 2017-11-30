@@ -230,6 +230,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             if (inputAnnotatedIntervalsFile == null) {
                 new SimpleIntervalCollection(new ArrayList<>(intervals)).write(intervalsFile);
             } else {
+                logger.info("Annotated intervals were provided; explicit GC-bias correction will be performed...");
                 final AnnotatedIntervalCollection inputAnnotatedIntervals = new AnnotatedIntervalCollection(inputAnnotatedIntervalsFile);
                 final AnnotatedIntervalCollection subsetAnnotatedIntervals = new AnnotatedIntervalCollection(
                         inputAnnotatedIntervals.getRecords().stream()
@@ -308,7 +309,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         arguments.addAll(germlineCallingArgumentCollection.generatePythonArguments());
 
         if (inputAnnotatedIntervalsFile != null) {
-            arguments.add("--enable_explicit_gc_bias_modeling True");
+            arguments.add("--enable_explicit_gc_bias_modeling=True");
         }
 
         arguments.add("--read_count_tsv_files");
@@ -452,10 +453,14 @@ public final class GermlineCNVCaller extends CommandLineProgram {
                         String.format("--psi_s_scale=%f", samplePsiScale),
                         String.format("--log_mean_bias_std=%f", logMeanBiasStandardDeviation),
                         String.format("--init_ard_rel_unexplained_variance=%f", initARDRelUnexplainedVariance),
-                        String.format("--enable_bias_factors=%s", enableBiasFactors ? "True" : "False"),
-                        String.format("--disable_bias_factors_in_flat_class=%s", disableBiasFactorsInFlatClass ? "True" : "False"),
                         String.format("--num_gc_bins=%d", numGCBins),
                         String.format("--gc_curve_sd=%f", gcCurveStandardDeviation)));
+                if (enableBiasFactors) {
+                    arguments.add("--enable_bias_factors=True");
+                }
+                if (disableBiasFactorsInFlatClass) {
+                    arguments.add("--disable_bias_factors_in_flat_class=True");
+                }
             }
             return arguments;
         }
@@ -519,8 +524,10 @@ public final class GermlineCNVCaller extends CommandLineProgram {
             if (mode == Mode.COHORT) {
                 arguments.addAll(Arrays.asList(
                         String.format("--p_flat=%f", pFlat),
-                        String.format("--class_coherence_length=%f", classCoherenceLength),
-                        String.format("--initialize_to_flat_class=%s", doInitializeToFlatClass ? "True" : "False")));
+                        String.format("--class_coherence_length=%f", classCoherenceLength)));
+            }
+            if (doInitializeToFlatClass) {
+                arguments.add("--initialize_to_flat_class=True");
             }
             return arguments;
         }

@@ -15,10 +15,12 @@ To get started, copy the relevant ``*.template.json`` for the workflow you wish 
 
 The reference used must be the same between PoN and case samples.
 
+- ``CNVGermlineCohortWorkflow.cohort_entity_id`` -- Name of the cohort.  Will be used as a prefix for output filenames.
+- ``CNVGermlineCohortWorkflow.contig_ploidy_priors`` -- TSV file containing prior probabilities for the ploidy of each contig, with column headers: CONTIG_NAME, PLOIDY_PRIOR_0, PLOIDY_PRIOR_1, ...
 - ``CNVGermlineCohortWorkflow.gatk_docker`` -- GATK Docker image (e.g., ``broadinstitute/gatk:x.beta.x``).
 - ``CNVGermlineCohortWorkflow.intervals`` -- Picard or GATK-style interval list.  For WGS, this should typically only include the chromosomes of interest.
 - ``CNVGermlineCohortWorkflow.normal_bams_list`` -- TSV file consisting of corresponding bam and corresponding index files as described in cnv_germline_cohort_workflow.wdl.
-- ``CNVGermlineCohortWorkflow.pon_entity_id`` -- Name of the final PoN file.
+- ``CNVGermlineCohortWorkflow.num_intervals_per_scatter`` -- Number of intervals (i.e., targets or bins) in each scatter for GermlineCNVCaller.  If total number of intervals is not divisible by the value provided, the last scatter will contain the remainder.
 - ``CNVGermlineCohortWorkflow.ref_fasta_dict`` -- Path to reference dict file.
 - ``CNVGermlineCohortWorkflow.ref_fasta_fai`` -- Path to reference fasta fai file.
 - ``CNVGermlineCohortWorkflow.ref_fasta`` -- Path to reference fasta file.

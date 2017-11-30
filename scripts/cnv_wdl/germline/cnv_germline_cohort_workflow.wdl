@@ -88,13 +88,14 @@ workflow CNVGermlineCohortWorkflow {
             gatk_docker = gatk_docker
     }
 
-    scatter (intervals in ScatterIntervals.scattered_interval_lists) {
+    scatter (scatter_index in range(length(ScatterIntervals.scattered_interval_lists))) {
         call GermlineCNVCallerCohortMode {
             input:
+                scatter_index = scatter_index,
                 cohort_entity_id = cohort_entity_id,
                 read_count_files = CollectCounts.counts,
                 contig_ploidy_calls_tar = DetermineGermlineContigPloidyCohortMode.contig_ploidy_calls_tar,
-                intervals = intervals,
+                intervals = ScatterIntervals.scattered_interval_lists[scatter_index],
                 ref_fasta_dict = ref_fasta_dict,
                 annotated_intervals = AnnotateIntervals.annotated_intervals,
                 gatk4_jar_override = gatk4_jar_override,
@@ -132,7 +133,8 @@ task DetermineGermlineContigPloidyCohortMode {
             --input ${sep=" --input " read_count_files} \
             --contigPloidyPriors ${contig_ploidy_priors} \
             --output ${output_dir_} \
-            --outputPrefix ${cohort_entity_id}
+            --outputPrefix ${cohort_entity_id} \
+            --verbosity DEBUG
 
         tar czf ${cohort_entity_id}-contig-ploidy-model.tar.gz -C ${output_dir_}/${cohort_entity_id}-model .
         tar czf ${cohort_entity_id}-contig-ploidy-calls.tar.gz -C ${output_dir_}/${cohort_entity_id}-calls .
@@ -152,6 +154,7 @@ task DetermineGermlineContigPloidyCohortMode {
 }
 
 task GermlineCNVCallerCohortMode {
+    Int scatter_index
     String cohort_entity_id
     Array[File] read_count_files
     File contig_ploidy_calls_tar
@@ -189,10 +192,11 @@ task GermlineCNVCallerCohortMode {
             ${"--annotatedIntervals " + annotated_intervals} \
             --interval_merging_rule OVERLAPPING_ONLY \
             --output ${output_dir_} \
-            --outputPrefix ${cohort_entity_id}
+            --outputPrefix ${cohort_entity_id} \
+            --verbosity DEBUG
 
-        tar czf ${cohort_entity_id}-gcnv-model.tar.gz -C ${output_dir_}/${cohort_entity_id}-model .
-        tar czf ${cohort_entity_id}-gcnv-calls.tar.gz -C ${output_dir_}/${cohort_entity_id}-calls .
+        tar czf ${cohort_entity_id}-gcnv-model-${scatter_index}.tar.gz -C ${output_dir_}/${cohort_entity_id}-model .
+        tar czf ${cohort_entity_id}-gcnv-calls-${scatter_index}.tar.gz -C ${output_dir_}/${cohort_entity_id}-calls .
     >>>
 
     runtime {
@@ -203,7 +207,7 @@ task GermlineCNVCallerCohortMode {
     }
 
     output {
-        File gcnv_model_tar = "${cohort_entity_id}-gcnv-model.tar.gz"
-        File gcnv_calls_tar = "${cohort_entity_id}-gcnv-calls.tar.gz"
+        File gcnv_model_tar = "${cohort_entity_id}-gcnv-model-${scatter_index}.tar.gz"
+        File gcnv_calls_tar = "${cohort_entity_id}-gcnv-calls-${scatter_index}.tar.gz"
     }
 }

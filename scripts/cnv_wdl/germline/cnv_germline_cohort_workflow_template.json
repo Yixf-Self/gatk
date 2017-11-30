@@ -1,11 +1,11 @@
 {
+  "CNVGermlineCohortWorkflow.cohort_entity_id": "String",
   "CNVGermlineCohortWorkflow.contig_ploidy_priors": "File",
   "CNVGermlineCohortWorkflow.gatk_docker": "String",
   "CNVGermlineCohortWorkflow.intervals": "File",
   "CNVGermlineCohortWorkflow.normal_bams_list": "File",
-  "CNVGermlineCohortWorkflow.cohort_entity_id": "String",
+  "CNVGermlineCohortWorkflow.num_intervals_per_scatter": "Int",
   "CNVGermlineCohortWorkflow.ref_fasta_dict": "File",
   "CNVGermlineCohortWorkflow.ref_fasta_fai": "File",
-  "CNVGermlineCohortWorkflow.ref_fasta": "File",
-  "CNVGermlineCohortWorkflow.num_intervals_per_scatter": "Int"
+  "CNVGermlineCohortWorkflow.ref_fasta": "File"
 }
