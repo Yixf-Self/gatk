@@ -6,8 +6,10 @@ import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFFileReader;
 import org.apache.hadoop.fs.Path;
 import org.broadinstitute.hellbender.CommandLineProgramTest;
+import org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryPipelineSpark;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
+import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.test.ArgumentsBuilder;
 import org.broadinstitute.hellbender.GATKBaseTest;
 import org.broadinstitute.hellbender.utils.test.BaseTest;
@@ -58,7 +60,8 @@ public class StructuralVariationDiscoveryPipelineSparkIntegrationTest extends Co
                     " --contigSAMFile "       + outputDir + "/assemblies.sam" +
                     " --breakpointIntervals " + outputDir + "/intervals" +
                     " --fastqDir "            + outputDir + "/fastq" +
-                    (cnvCallsLoc == null ? "" : " --cnvCalls " + cnvCallsLoc);
+                    (cnvCallsLoc == null ? "" : " --cnvCalls " + cnvCallsLoc) +
+                    " --alsoRunPrototypingInterpreter";
         }
 
         @Override
@@ -99,7 +102,8 @@ public class StructuralVariationDiscoveryPipelineSparkIntegrationTest extends Co
         final List<String> args = Arrays.asList( new ArgumentsBuilder().add(params.getCommandLineNoApiKey()).getArgsArray() );
         runCommandLine(args);
 
-        svDiscoveryVCFEquivalenceTest(args.get(args.indexOf("-O")+1), SVIntegrationTestDataProvider.EXPECTED_SIMPLE_DEL_VCF, annotationsToIgnoreWhenComparingVariants, false);
+        svDiscoveryVCFEquivalenceTest(args.get(args.indexOf("-O")+1), SVIntegrationTestDataProvider.EXPECTED_SIMPLE_DEL_VCF,
+                annotationsToIgnoreWhenComparingVariants, false, true);
     }
 
     @Test(dataProvider = "svDiscoverPipelineSparkIntegrationTest", groups = "sv")
@@ -151,16 +155,50 @@ public class StructuralVariationDiscoveryPipelineSparkIntegrationTest extends Co
 
             runCommandLine(argsToBeModified);
             svDiscoveryVCFEquivalenceTest(vcfOnHDFS, SVIntegrationTestDataProvider.EXPECTED_SIMPLE_DEL_VCF,
-                    annotationsToIgnoreWhenComparingVariants, true);
+                    annotationsToIgnoreWhenComparingVariants, true, true);
         });
     }
 
     static void svDiscoveryVCFEquivalenceTest(final String generatedVCFPath, final String expectedVCFPath,
-                                              final List<String> attributesToIgnore, final boolean onHDFS) throws Exception{
+                                              final List<String> attributesToIgnore, final boolean onHDFS,
+                                              final boolean experimentalFeatureTurnedOn) throws Exception {
 
-        VCFFileReader fileReader;
-        CloseableIterator<VariantContext> iterator;
-        final List<VariantContext> actualVcs;
+        final VCFFileReader fileReader = new VCFFileReader(new File(expectedVCFPath), false);
+        final CloseableIterator<VariantContext> iterator = fileReader.iterator();
+        final List<VariantContext> expectedVcs = Utils.stream(iterator).collect(Collectors.toList());
+        CloserUtil.close(iterator);
+        CloserUtil.close(fileReader);
+
+        List<VariantContext> actualVcs = extractActualVCs(generatedVCFPath, onHDFS);
+
+        GATKBaseTest.assertCondition(actualVcs, expectedVcs,
+                (a, e) -> VariantContextTestUtils.assertVariantContextsAreEqual(a, e, attributesToIgnore));
+
+        if (experimentalFeatureTurnedOn) {
+            final String experimentalInsDelVcf;
+            if (onHDFS) {
+                experimentalInsDelVcf = IOUtils.getPath(generatedVCFPath).getParent().toAbsolutePath()
+                        .resolve(StructuralVariationDiscoveryPipelineSpark.EXPERIMENTAL_INTERPRETATION_OUTPUT_DIR_NAME.concat("/InsDel.vcf"))
+                        .toUri().toString();
+            } else {
+                experimentalInsDelVcf = IOUtils.getPath(generatedVCFPath).getParent().toAbsolutePath().toString() +
+                        "/" + StructuralVariationDiscoveryPipelineSpark.EXPERIMENTAL_INTERPRETATION_OUTPUT_DIR_NAME + "/InsDel.vcf";
+            }
+
+            actualVcs = extractActualVCs(experimentalInsDelVcf, onHDFS);
+
+            // TODO: 11/30/17 temporary solution to ignore these attributes before they can be brought back
+            final List<String> moreAttributesToIgnoreForNow = new ArrayList<>(attributesToIgnore);
+            moreAttributesToIgnoreForNow.addAll(Arrays.asList("HOMSEQ", "HOMLEN", "EXTERNAL_CNV_CALLS"));
+            GATKBaseTest.assertCondition(actualVcs, expectedVcs,
+                    (a, e) -> VariantContextTestUtils.assertVariantContextsAreEqual(a, e, moreAttributesToIgnoreForNow));
+        }
+    }
+
+    private static List<VariantContext> extractActualVCs(final String generatedVCFPath, final boolean onHDFS)
+            throws IOException {
+
+        final VCFFileReader fileReader;
         if (onHDFS) {
             final File tempLocalVCF = GATKBaseTest.createTempFile("variants", "vcf");
             tempLocalVCF.deleteOnExit();
@@ -169,17 +207,11 @@ public class StructuralVariationDiscoveryPipelineSparkIntegrationTest extends Co
         } else {
             fileReader = new VCFFileReader(new File(generatedVCFPath), false);
         }
-        iterator = fileReader.iterator();
-        actualVcs = Utils.stream(iterator).collect(Collectors.toList());
+        final CloseableIterator<VariantContext> iterator = fileReader.iterator();
+        final List<VariantContext> actualVcs = Utils.stream(iterator).collect(Collectors.toList());
         CloserUtil.close(iterator);
         CloserUtil.close(fileReader);
 
-        fileReader = new VCFFileReader(new File(expectedVCFPath), false);
-        iterator = fileReader.iterator();
-        final List<VariantContext> expectedVcs = Utils.stream(iterator).collect(Collectors.toList());
-        CloserUtil.close(iterator);
-        CloserUtil.close(fileReader);
-
-        GATKBaseTest.assertCondition(actualVcs, expectedVcs, (a, e) -> VariantContextTestUtils.assertVariantContextsAreEqual(a, e, attributesToIgnore));
+        return actualVcs;
     }
 }

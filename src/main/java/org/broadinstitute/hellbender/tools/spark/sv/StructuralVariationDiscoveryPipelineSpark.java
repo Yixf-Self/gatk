@@ -1,7 +1,10 @@
 package org.broadinstitute.hellbender.tools.spark.sv;
 
 import com.google.common.annotations.VisibleForTesting;
-import htsjdk.samtools.*;
+import htsjdk.samtools.SAMFileHeader;
+import htsjdk.samtools.SAMFlag;
+import htsjdk.samtools.SAMReadGroupRecord;
+import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -29,17 +32,16 @@ import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignment;
 import org.broadinstitute.hellbender.utils.bwa.BwaMemAlignmentUtils;
 import org.broadinstitute.hellbender.utils.fermi.FermiLiteAssembly;
+import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.read.SAMRecordToGATKReadAdapter;
 import scala.Serializable;
 
-import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import static org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection.DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection;
 import static org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection.FindBreakpointEvidenceSparkArgumentCollection;
@@ -56,6 +58,8 @@ import static org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDi
 public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
     private static final long serialVersionUID = 1L;
     private final Logger localLogger = LogManager.getLogger(StructuralVariationDiscoveryPipelineSpark.class);
+
+    public static final String EXPERIMENTAL_INTERPRETATION_OUTPUT_DIR_NAME = "experimentalVariantInterpretations";
 
     @Argument(doc = "sam file for aligned contigs", shortName = "contigSAMFile",
             fullName = "contigSAMFile")
@@ -169,9 +173,11 @@ public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
                                             final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary,
                                             final String sampleId,
                                             final FindBreakpointEvidenceSpark.AssembledEvidenceResults assembledEvidenceResults) {
-        final String expOutputDir =
-                IOUtils.getPath(vcfOutputFileName).getParent().toAbsolutePath().toString() +
-                        "/experimentalVariantInterpretations";
+        String expOutputDir =
+                IOUtils.getPath(vcfOutputFileName).getParent().toAbsolutePath().resolve(EXPERIMENTAL_INTERPRETATION_OUTPUT_DIR_NAME)
+                .toUri().toString();
+        if ( !BucketUtils.isRemoteStorageUrl(expOutputDir) )
+            expOutputDir = expOutputDir.replaceFirst("file://", "");
         final SAMReadGroupRecord contigAlignmentsReadGroup = new SAMReadGroupRecord(SVUtils.GATKSV_CONTIG_ALIGNMENTS_READ_GROUP_ID);
         final List<String> refNames = SequenceDictionaryUtils.getContigNamesList(refSequenceDictionary);
 
@@ -192,6 +198,8 @@ public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
 
         SvDiscoverFromLocalAssemblyContigAlignmentsSpark.dispatchJobs(sampleId, expOutputDir,
                 contigsByPossibleRawTypes, referenceMultiSourceBroadcast, broadcastSequenceDictionary, localLogger);
+
+        // TODO: 11/30/17 add EXTERNAL_CNV_CALLS annotation to the variants called here
     }
 
     /**
