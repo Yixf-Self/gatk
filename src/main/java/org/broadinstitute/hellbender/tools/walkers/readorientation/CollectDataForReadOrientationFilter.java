@@ -196,13 +196,11 @@ public class CollectDataForReadOrientationFilter extends LocusWalker {
 
         List<Integer> mappingQualities = Ints.asList(pileup.getMappingQuals());
 
-        final boolean isIndel = pileup.getNumberOfElements(pe -> pe.isDeletion() || pe.isAfterInsertion() || pe.isBeforeDeletionStart()) > 0;
+        boolean isIndel = pileup.getNumberOfElements(pe -> pe.isDeletion() || pe.isAfterInsertion() || pe.isBeforeDeletionStart()) > 0;
 
-        if (depth == 0 && pileup.size() > 0) {
-            // I have seen this happen before. I'll leave this here until I reproduce this. If I cannot reproduce I will remove.
-            throw new UserException(String.format("Encountered depth = 0 at %s but pileup size was %d > 0",
-                    referenceContext.getInterval(), pileup.size()));
-        }
+        // If depth (the sum of base counts) is 0 but the pileup is non-empty, that means all the reads
+        // have deleted bases at this particular locus
+        isIndel = isIndel || depth == 0 && pileup.size() > 0;
 
         return pileup.size() > 0 || ! isIndel || MathUtils.median(mappingQualities) >= MINIMUM_MEDIAN_MQ || depth > 0;
     }
