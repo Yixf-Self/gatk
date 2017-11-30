@@ -1,10 +1,13 @@
 {
-  "CNVGermlineCaseWorkflow.common_sites": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/common_snps_sample-chr20xyinterval_list",
+  "CNVGermlineCaseWorkflow.bam": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/SM-74NEG_20xy-downsampled.bam",
+  "CNVGermlineCaseWorkflow.bam_idx": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/SM-74NEG_20xy-downsampled.bam.bai",
+  "CNVGermlineCaseWorkflow.contig_ploidy_model_tar": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/wes-contig-ploidy-model.tar.gz",
   "CNVGermlineCaseWorkflow.gatk_docker": "__GATK_DOCKER__",
+  "CNVGermlineCaseWorkflow.gcnv_model_tars": [
+    "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/wes-no-gc-gcnv-model-0.tar.gz",
+    "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/wes-no-gc-gcnv-model-1.tar.gz"],
   "CNVGermlineCaseWorkflow.intervals": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/ice_targets_chr20xy.interval_list",
-  "CNVGermlineCaseWorkflow.normal_bam": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/SM-74NEG-v1-chr20-downsampled.deduplicated.bam",
-  "CNVGermlineCaseWorkflow.normal_bam_idx": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/SM-74NEG-v1-chr20-downsampled.deduplicated.bam.bai",
-  "CNVGermlineCaseWorkflow.read_count_pon": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/wes-no-gc.pon.hdf5",
+  "CNVGermlineCaseWorkflow.num_intervals_per_scatter": "100",
   "CNVGermlineCaseWorkflow.ref_fasta_dict": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/Homo_sapiens_assembly19.truncated.dict",
   "CNVGermlineCaseWorkflow.ref_fasta_fai": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/Homo_sapiens_assembly19.truncated.fasta.fai",
   "CNVGermlineCaseWorkflow.ref_fasta": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/Homo_sapiens_assembly19.truncated.fasta"

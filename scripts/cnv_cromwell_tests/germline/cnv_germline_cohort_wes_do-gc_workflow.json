@@ -1,6 +1,6 @@
 {
   "CNVGermlineCohortWorkflow.cohort_entity_id": "test",
-  "CNVGermlineCohortWorkflow.contig_ploidy_priors": "/home/slee/working/gatk/src/test/resources/large/cnv_germline_workflows_test_files/contig_ploidy_priors_chr20xy.tsv",
+  "CNVGermlineCohortWorkflow.contig_ploidy_priors": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/contig_ploidy_priors_chr20xy.tsv",
   "CNVGermlineCohortWorkflow.do_explicit_gc_correction": "true",
   "CNVGermlineCohortWorkflow.gatk_docker": "__GATK_DOCKER__",
   "CNVGermlineCohortWorkflow.intervals": "/home/travis/build/broadinstitute/gatk/src/test/resources/large/cnv_germline_workflows_test_files/ice_targets_chr20xy.interval_list",

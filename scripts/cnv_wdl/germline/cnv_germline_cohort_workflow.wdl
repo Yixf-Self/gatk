@@ -27,10 +27,10 @@ workflow CNVGermlineCohortWorkflow {
     Array[Array[String]]+ normal_bams = read_tsv(normal_bams_list)
     String cohort_entity_id
     File contig_ploidy_priors
+    Int num_intervals_per_scatter
     File ref_fasta_dict
     File ref_fasta_fai
     File ref_fasta
-    Int num_intervals_per_scatter
     String gatk_docker
     File? gatk4_jar_override
     Int? mem_for_determine_germline_contig_ploidy

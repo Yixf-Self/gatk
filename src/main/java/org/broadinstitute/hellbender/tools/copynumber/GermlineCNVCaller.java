@@ -262,6 +262,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         }
 
         Utils.nonNull(outputPrefix);
+        Utils.validateArg(new File(inputContigPloidyCallsDir).exists(), String.format("Input contig-ploidy calls directory %s does not exist.", inputContigPloidyCallsDir));
         Utils.validateArg(new File(outputDir).exists(), String.format("Output directory %s does not exist.", outputDir));
 
         //TODO validate argument collections
@@ -525,9 +526,9 @@ public final class GermlineCNVCaller extends CommandLineProgram {
                 arguments.addAll(Arrays.asList(
                         String.format("--p_flat=%f", pFlat),
                         String.format("--class_coherence_length=%f", classCoherenceLength)));
-            }
-            if (doInitializeToFlatClass) {
-                arguments.add("--initialize_to_flat_class=True");
+                if (doInitializeToFlatClass) {
+                    arguments.add("--initialize_to_flat_class=True");
+                }
             }
             return arguments;
         }

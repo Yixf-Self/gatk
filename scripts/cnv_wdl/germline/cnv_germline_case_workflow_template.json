@@ -1,9 +1,11 @@
 {
+  "CNVGermlineCaseWorkflow.bam": "File",
+  "CNVGermlineCaseWorkflow.bam_idx": "File",
+  "CNVGermlineCaseWorkflow.contig_ploidy_model_tar": "File",
   "CNVGermlineCaseWorkflow.gatk_docker": "String",
+  "CNVGermlineCaseWorkflow.gcnv_model_tars": "Array[File]",
   "CNVGermlineCaseWorkflow.intervals": "File",
-  "CNVGermlineCaseWorkflow.normal_bam": "File",
-  "CNVGermlineCaseWorkflow.normal_bam_idx": "File",
-  "CNVGermlineCaseWorkflow.read_count_pon": "File",
+  "CNVGermlineCaseWorkflow.num_intervals_per_scatter": "Int",
   "CNVGermlineCaseWorkflow.ref_fasta_dict": "File",
   "CNVGermlineCaseWorkflow.ref_fasta_fai": "File",
   "CNVGermlineCaseWorkflow.ref_fasta": "File"

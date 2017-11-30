@@ -17,7 +17,7 @@ The reference used must be the same between PoN and case samples.
 
 - ``CNVSomaticPanelWorkflow.gatk_docker`` -- GATK Docker image (e.g., ``broadinstitute/gatk:x.beta.x``).
 - ``CNVSomaticPanelWorkflow.intervals`` -- Picard or GATK-style interval list.  For WGS, this should typically only include the autosomal chromosomes.
-- ``CNVSomaticPanelWorkflow.normal_bams_list`` -- TSV file consisting of corresponding bam and corresponding index files as described in cnv_somatic_panel_workflow.wdl.
+- ``CNVSomaticPanelWorkflow.normal_bams_list`` -- TSV file consisting of corresponding BAM and index paths as described in cnv_somatic_panel_workflow.wdl.
 - ``CNVSomaticPanelWorkflow.pon_entity_id`` -- Name of the final PoN file.
 - ``CNVSomaticPanelWorkflow.ref_fasta_dict`` -- Path to reference dict file.
 - ``CNVSomaticPanelWorkflow.ref_fasta_fai`` -- Path to reference fasta fai file.
@@ -33,19 +33,19 @@ Further explanation of other task-level parameters may be found by invoking the 
 
 #### Required parameters in the somatic pair workflow
 
-The reference (and bins, if specified) used must be the same between PoN and case samples.
+The reference and bins (if specified) must be the same between PoN and case samples.
 
 - ``CNVSomaticPairWorkflow.common_sites`` -- Picard or GATK-style interval list of common sites to use for collecting allelic counts.
 - ``CNVSomaticPairWorkflow.gatk_docker`` -- GATK Docker image (e.g., "broadinstitute/gatk:x.beta.x").
 - ``CNVSomaticPairWorkflow.intervals`` -- Picard or GATK-style interval list.  For WGS, this should typically only include the autosomal chromosomes.
-- ``CNVSomaticPairWorkflow.normal_bam`` -- File path or storage location (depending on backend) of the normal BAM file.
-- ``CNVSomaticPairWorkflow.normal_bam_idx`` -- File path or storage location (depending on backend) of the normal BAM file index.
+- ``CNVSomaticPairWorkflow.normal_bam`` -- Path to normal BAM file.
+- ``CNVSomaticPairWorkflow.normal_bam_idx`` -- Path to normal BAM file index.
 - ``CNVSomaticPairWorkflow.read_count_pon`` -- Path to read-count PoN created by the panel workflow. 
 - ``CNVSomaticPairWorkflow.ref_fasta_dict`` -- Path to reference dict file.
 - ``CNVSomaticPairWorkflow.ref_fasta_fai`` -- Path to reference fasta fai file.
 - ``CNVSomaticPairWorkflow.ref_fasta`` -- Path to reference fasta file.
-- ``CNVSomaticPairWorkflow.tumor_bam`` -- File path or storage location (depending on backend) of the tumor BAM file.
-- ``CNVSomaticPairWorkflow.tumor_bam_idx`` -- File path or storage location (depending on backend) of the tumor BAM file index.
+- ``CNVSomaticPairWorkflow.tumor_bam`` -- Path to tumor BAM file.
+- ``CNVSomaticPairWorkflow.tumor_bam_idx`` -- Path to tumor BAM file index.
 
 In additional, there are several task-level parameters that may be set by advanced users as above.
 
