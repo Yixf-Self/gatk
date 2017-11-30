@@ -10,10 +10,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.broadcast.Broadcast;
-import org.broadinstitute.barclay.argparser.Argument;
-import org.broadinstitute.barclay.argparser.ArgumentCollection;
-import org.broadinstitute.barclay.argparser.BetaFeature;
-import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
+import org.broadinstitute.barclay.argparser.*;
 import org.broadinstitute.barclay.help.DocumentedFeature;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.cmdline.programgroups.StructuralVariationSparkProgramGroup;
@@ -67,6 +64,11 @@ public class StructuralVariationDiscoveryPipelineSpark extends GATKSparkTool {
     @ArgumentCollection
     private final DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection discoverStageArgs
             = new DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection();
+
+    @Hidden
+    @Argument(doc = "to use prototyping breakpoint and type inference tool or not, in addition to master version",
+            shortName = "exp", fullName = "alsoRunPrototypingInterpreter", optional = true)
+    private Boolean alsoRunPrototypingInterpreter = false;
 
     @Override
     public boolean requiresReads()
